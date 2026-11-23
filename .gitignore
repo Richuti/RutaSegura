@@ -1,0 +1,19 @@
+# Godot 4: caché del editor (se regenera al abrir el proyecto)
+.godot/
+/android/
+
+# Exportaciones y llaves de firma (nunca subir)
+*.apk
+*.aab
+*.keystore
+*.jks
+export_credentials.cfg
+
+# Python
+__pycache__/
+*.pyc
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
