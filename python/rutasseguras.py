@@ -1,26 +1,14 @@
-# ==========================================================
-#  RutasSeguras - Versión en Python (consola)
-#  Estructura de Datos: GRAFO DIRIGIDO Y PONDERADO
-#  Misma estructura vista en clase: Vertex (city, neig) y
-#  Graph (vertexs, insertVertex, link, printMatrix).
-#  Vértices = lugares del campus UAM (edificios A, B y C con sus
-#  plantas, escaleras, puente B-C, cafetería y zonas seguras).
-#  Pesos = distancia en metros (en escaleras x1.5).
-#  Son los MISMOS datos que usa la app de Godot.
-# ==========================================================
-
 class Vertex:
     def __init__(self, city: str, segura: bool = False):
-        self.city = city          # nombre del lugar del campus
-        self.segura = segura      # True si es zona segura de evacuación
-        self.neig = []            # lista de (Vertex, peso)
+        self.city = city          
+        self.segura = segura     
+        self.neig = []           
 
 
 class Graph:
     def __init__(self):
         self.vertexs: list[Vertex] = []
 
-    # ---------- Métodos vistos en clase ----------
     def insertVertex(self, city: str, segura: bool = False) -> bool:
         for v in self.vertexs:
             if v.city.lower() == city.lower():
@@ -68,20 +56,17 @@ class Graph:
                         matriz[i][j] = peso
                         break
 
-        # Imprimir encabezados.
         print(f"{'':{ancho}}", end="")
         for v in ciudades:
             print(f"{v.city[:ancho-1]:{ancho}}", end="")
         print()
 
-        # Imprimir matriz.
         for i in range(n):
             print(f"{ciudades[i].city[:ancho-1]:{ancho}}", end="")
             for peso in matriz[i]:
                 print(f"{peso:<{ancho}g}", end="")
             print()
 
-    # ---------- Métodos nuevos del proyecto ----------
     def buscar(self, city: str):
         for v in self.vertexs:
             if v.city.lower() == city.lower():
@@ -89,7 +74,6 @@ class Graph:
         return None
 
     def linkDoble(self, a: str, b: str, peso: float) -> bool:
-        # Los pasillos se pueden caminar en ambos sentidos.
         return self.link(a, b, peso) and self.link(b, a, peso)
 
     def printLugares(self) -> None:
@@ -111,7 +95,6 @@ class Graph:
         dist[inicio] = 0
 
         for _ in range(len(self.vertexs)):
-            # Elegir el no visitado con menor distancia.
             actual = None
             for v in self.vertexs:
                 if not visitado[v] and (actual is None or dist[v] < dist[actual]):
@@ -120,7 +103,6 @@ class Graph:
                 break
             visitado[actual] = True
 
-            # Relajar aristas.
             for vecino, peso in actual.neig:
                 if permitido is not None and not permitido(actual, vecino):
                     continue
@@ -152,7 +134,6 @@ class Graph:
         print(f"  Distancia total: {dist[fin]:g} m")
 
     def evacuar(self, origen: str) -> None:
-        # Regla de evacuación: no volver a entrar a un edificio ni cruzar a otro
         dist, previo = self.dijkstra(origen, permitido_evacuar)
         if dist is None:
             print("  Lugar no encontrado.")
@@ -169,11 +150,6 @@ class Graph:
         print("  Ruta: " + " -> ".join(camino))
         print(f"  Distancia: {dist[mejor]:g} m")
 
-
-# ==========================================================
-#  Zonas: ¿en qué edificio está un lugar? ("" = afuera)
-#  "B2 - Pasillo Central" -> "B";  "Patio B-C" -> ""
-# ==========================================================
 def zona(v: Vertex) -> str:
     nombre = v.city
     if "Salida" in nombre:
@@ -184,7 +160,6 @@ def zona(v: Vertex) -> str:
 
 
 def permitido_evacuar(a: Vertex, b: Vertex) -> bool:
-    # Una vez afuera no se vuelve a entrar; no se cruza de un edificio a otro.
     za, zb = zona(a), zona(b)
     if za == "" and zb != "":
         return False
@@ -192,10 +167,6 @@ def permitido_evacuar(a: Vertex, b: Vertex) -> bool:
         return False
     return True
 
-
-# ==========================================================
-#  Mapa del campus UAM (generado desde la app de Godot)
-# ==========================================================
 lugares = [
     "A - Entrada Norte",
     "A - Pasillo Central",
@@ -359,11 +330,7 @@ for a, b, peso in pasillos:
     mapa.linkDoble(a, b, peso)
 
 
-# ==========================================================
-#  Menú
-# ==========================================================
 def pedir_lugar(pregunta: str) -> str:
-    # Se puede escribir el nombre o el número de la lista (opción 1)
     t = input(pregunta).strip()
     if t.isdigit() and 1 <= int(t) <= len(mapa.vertexs):
         return mapa.vertexs[int(t) - 1].city
