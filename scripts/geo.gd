@@ -1,22 +1,26 @@
 # ==========================================================
 #  RutasSeguras - Georreferencia
 #  Convierte GPS (latitud, longitud) <-> mapa del campus (metros).
-#  El mapa usa x = este, z = sur (el "arriba" del mapa es el norte).
-#  Los valores base son aproximados (Plus Code de la UAM:
-#  764M4P5V+96W). Se afinan en el campus con "Calibrar GPS":
+#  El mapa de la app copia el cartel oficial de Rutas de Evacuación,
+#  que tiene el ESTE arriba: x = sur, z = oeste (A queda al este y
+#  B y C se extienden hacia el oeste). Por eso el giro base es -90°.
+#  El origen sale de los contornos de OpenStreetMap (A, B y C miden
+#  unos 88 x 31 m, igual que en campus.gd). Se afinan en el campus con "Calibrar GPS":
 #  te paras en dos lugares conocidos y la app calcula el giro,
 #  la escala y el desplazamiento del mapa.
 # ==========================================================
 class_name Geo
 extends RefCounted
 
-const LAT0 := 12.1090301    # GPS aproximado del punto (0, 0) del mapa (esquina NO del Edificio A)
-const LON0 := -86.2570597
+const LAT0 := 12.1085553    # GPS del punto (0, 0) del mapa: esquina NE del Edificio A
+const LON0 := -86.2565728
+const GIRO_BASE := -PI / 2.0  # el "arriba" del mapa es el este
+const VERSION_CALIBRACION := 2   # sube si cambian LAT0/LON0/GIRO_BASE (invalida calibraciones viejas)
 const M_POR_GRADO_LAT := 110574.0
 const CENTRO := Vector2(10, 55)      # centro del campus en el mapa
 const RADIO_CAMPUS := 260.0          # más lejos que esto = "fuera de la UAM"
 
-static var giro := 0.0               # radianes: giro del mapa respecto al norte
+static var giro := GIRO_BASE         # radianes: giro del mapa respecto al norte
 static var escala := 1.0
 static var desplaz := Vector2.ZERO   # (este, norte) en metros
 static var calibrado := false
@@ -75,13 +79,17 @@ static func calibrar_2(l1: Vector2, g1: Vector2, l2: Vector2, g2: Vector2) -> St
 
 
 static func cargar(cfg: ConfigFile) -> void:
-	giro = cfg.get_value("gps", "giro", 0.0)
+	if cfg.get_value("gps", "version", 1) != VERSION_CALIBRACION:
+		reiniciar()   # calibración hecha con el mapa viejo: ya no sirve
+		return
+	giro = cfg.get_value("gps", "giro", GIRO_BASE)
 	escala = cfg.get_value("gps", "escala", 1.0)
 	desplaz = cfg.get_value("gps", "desplaz", Vector2.ZERO)
 	calibrado = cfg.get_value("gps", "calibrado", false)
 
 
 static func guardar(cfg: ConfigFile) -> void:
+	cfg.set_value("gps", "version", VERSION_CALIBRACION)
 	cfg.set_value("gps", "giro", giro)
 	cfg.set_value("gps", "escala", escala)
 	cfg.set_value("gps", "desplaz", desplaz)
@@ -89,7 +97,7 @@ static func guardar(cfg: ConfigFile) -> void:
 
 
 static func reiniciar() -> void:
-	giro = 0.0
+	giro = GIRO_BASE
 	escala = 1.0
 	desplaz = Vector2.ZERO
 	calibrado = false

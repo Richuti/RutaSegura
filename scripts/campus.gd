@@ -43,11 +43,11 @@ const AULAS = [
 ]
 
 # Escaleras (cajas de escalera con descanso a media altura), pegadas al
-# lado oeste para dejar libre el pasillo: letra, x del centro de la escalera,
+# lado norte para dejar libre el pasillo: letra, x del centro de la escalera,
 # z en el borde del piso, z del descanso, nombre
 const ESCALERAS = [
-	["B", 3.0, 38.0, 32.0, "Norte"], ["B", 3.0, 82.0, 88.0, "Sur"],
-	["C", 21.5, 38.0, 32.0, "Norte"], ["C", 21.5, 82.0, 88.0, "Sur"],
+	["B", 3.0, 38.0, 32.0, "Este"], ["B", 3.0, 82.0, 88.0, "Oeste"],
+	["C", 21.5, 38.0, 32.0, "Este"], ["C", 21.5, 82.0, 88.0, "Oeste"],
 ]
 const SEPARACION_TRAMOS := 1.25   # distancia del centro a cada tramo de la escalera
 
@@ -89,55 +89,55 @@ static func aberturas() -> Array:
 
 # Puntos de planta baja y exteriores: nombre, posición
 const PUNTOS = [
-	["A - Entrada Norte",   Vector3(15, 0, 1)],
+	["A - Entrada Este",   Vector3(15, 0, 1)],
 	["A - Pasillo Central", Vector3(15, 0, 13)],
-	["A - Pasillo Oeste",   Vector3(6, 0, 13)],
-	["A - Salida Oeste",    Vector3(-2, 0, 13)],
-	["A - Extremo Sur",     Vector3(6, 0, 25)],
-	["B - Extremo Norte",   Vector3(6, 0, 31)],
+	["A - Pasillo Norte",   Vector3(6, 0, 13)],
+	["A - Salida Norte",    Vector3(-2, 0, 13)],
+	["A - Extremo Oeste",     Vector3(6, 0, 25)],
+	["B - Extremo Este",   Vector3(6, 0, 31)],
 	["B - Pasillo Central", Vector3(6, 0, 60)],
-	["B - Salida Oeste",    Vector3(-2, 0, 60)],
-	["B - Extremo Sur",     Vector3(6, 0, 89)],
-	["B - Salida Sur",      Vector3(6, 0, 91.5)],
+	["B - Salida Norte",    Vector3(-2, 0, 60)],
+	["B - Extremo Oeste",     Vector3(6, 0, 89)],
+	["B - Salida Oeste",      Vector3(6, 0, 91.5)],
 	["Patio B-C",           Vector3(15.5, 0, 60)],
-	["C - Extremo Norte",   Vector3(24.5, 0, 31)],
+	["C - Extremo Este",   Vector3(24.5, 0, 31)],
 	["C - Pasillo Central", Vector3(24.5, 0, 60)],
-	["C - Extremo Sur",     Vector3(24.5, 0, 89)],
-	["C - Salida Sur",      Vector3(24.5, 0, 93)],
-	["Sendero Sur B-C",     Vector3(15.5, 0, 95)],
+	["C - Extremo Oeste",     Vector3(24.5, 0, 89)],
+	["C - Salida Oeste",      Vector3(24.5, 0, 93)],
+	["Sendero Oeste B-C",     Vector3(15.5, 0, 95)],
 	["Cafetería",           Vector3(-30, 0, 21)],
 ]
 
 # Zonas de seguridad (círculo verde con check en el mapa oficial)
 const ZONAS_SEGURAS = [
 	["Plaza Central Rubén Darío", Vector3(-35, 0, 45)],
-	["Punto de Reunión Sur",      Vector3(-15, 0, 116)],
+	["Punto de Reunión Oeste",      Vector3(-15, 0, 116)],
 ]
 
 # Pasillos de planta baja y exteriores (se caminan en ambos sentidos)
 const PASILLOS = [
-	["A - Entrada Norte",   "A - Pasillo Central"],
-	["A - Pasillo Central", "A - Pasillo Oeste"],
-	["A - Pasillo Oeste",   "A - Salida Oeste"],
-	["A - Pasillo Oeste",   "A - Extremo Sur"],
-	["A - Salida Oeste",    "Plaza Central Rubén Darío"],
-	["A - Extremo Sur",     "B - Extremo Norte"],
-	["B - Extremo Norte",   "B - Pasillo Central"],
-	["B - Pasillo Central", "B - Salida Oeste"],
-	["B - Salida Oeste",    "Plaza Central Rubén Darío"],
-	["B - Pasillo Central", "B - Extremo Sur"],
-	["B - Extremo Sur",     "B - Salida Sur"],
-	["B - Salida Sur",      "Punto de Reunión Sur"],
+	["A - Entrada Este",   "A - Pasillo Central"],
+	["A - Pasillo Central", "A - Pasillo Norte"],
+	["A - Pasillo Norte",   "A - Salida Norte"],
+	["A - Pasillo Norte",   "A - Extremo Oeste"],
+	["A - Salida Norte",    "Plaza Central Rubén Darío"],
+	["A - Extremo Oeste",     "B - Extremo Este"],
+	["B - Extremo Este",   "B - Pasillo Central"],
+	["B - Pasillo Central", "B - Salida Norte"],
+	["B - Salida Norte",    "Plaza Central Rubén Darío"],
+	["B - Pasillo Central", "B - Extremo Oeste"],
+	["B - Extremo Oeste",     "B - Salida Oeste"],
+	["B - Salida Oeste",      "Punto de Reunión Oeste"],
 	["B - Pasillo Central", "Patio B-C"],
 	["Patio B-C",           "C - Pasillo Central"],
-	["C - Extremo Norte",   "C - Pasillo Central"],
-	["C - Pasillo Central", "C - Extremo Sur"],
-	["C - Extremo Sur",     "C - Salida Sur"],
-	["C - Salida Sur",      "Sendero Sur B-C"],
-	["B - Salida Sur",      "Sendero Sur B-C"],
-	["Sendero Sur B-C",     "Punto de Reunión Sur"],
-	["Patio B-C",           "Sendero Sur B-C"],
-	["A - Salida Oeste",    "Cafetería"],
+	["C - Extremo Este",   "C - Pasillo Central"],
+	["C - Pasillo Central", "C - Extremo Oeste"],
+	["C - Extremo Oeste",     "C - Salida Oeste"],
+	["C - Salida Oeste",      "Sendero Oeste B-C"],
+	["B - Salida Oeste",      "Sendero Oeste B-C"],
+	["Sendero Oeste B-C",     "Punto de Reunión Oeste"],
+	["Patio B-C",           "Sendero Oeste B-C"],
+	["A - Salida Norte",    "Cafetería"],
 	["Cafetería",           "Plaza Central Rubén Darío"],
 ]
 
@@ -157,9 +157,9 @@ static func crear_campus() -> Graph:
 		var x: float = e[1]
 		for planta in [2, 3]:
 			var y: float = (planta - 1) * ALTURA_PLANTA
-			var n := "%s%d - Extremo Norte" % [letra, planta]
+			var n := "%s%d - Extremo Este" % [letra, planta]
 			var c := "%s%d - Pasillo Central" % [letra, planta]
-			var s := "%s%d - Extremo Sur" % [letra, planta]
+			var s := "%s%d - Extremo Oeste" % [letra, planta]
 			mapa.insertVertex(n, false, Vector3(x, y, 38.6))
 			mapa.insertVertex(c, false, Vector3(x, y, 60))
 			mapa.insertVertex(s, false, Vector3(x, y, 81.4))
@@ -175,7 +175,7 @@ static func crear_campus() -> Graph:
 	_unir(mapa, "Puente B-C", "Puente B-C - Escalera (arriba)")
 	_unir(mapa, "Puente B-C - Escalera (arriba)", "Puente B-C - Escalera (abajo)")
 	_unir(mapa, "Puente B-C - Escalera (abajo)", "Patio B-C")
-	_unir(mapa, "Puente B-C - Escalera (abajo)", "Sendero Sur B-C")
+	_unir(mapa, "Puente B-C - Escalera (abajo)", "Sendero Oeste B-C")
 
 	# Escaleras: cada cambio de planta = tramo + descanso + tramo (como en la vida real).
 	# Cada tramo es una arista inclinada; el descanso es una arista plana.
@@ -269,6 +269,9 @@ static func edificio_xz(p: Vector2, actual: String = "") -> String:
 	return ""
 
 
-# Plantas que tiene el grafo en cada edificio (A solo tiene planta baja mapeada)
+# Plantas físicas. El grafo de A, por ahora, solo cubre planta baja.
 static func plantas_de(letra: String) -> int:
-	return 3 if letra in ["B", "C"] else 1
+	for e in EDIFICIOS:
+		if e[1] == letra:
+			return e[8]
+	return 1

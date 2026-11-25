@@ -22,10 +22,13 @@ var estado := "sin_gps"
 var lat := 0.0
 var lon := 0.0
 var precision := 999.0
+var negado := false       # el usuario negó el permiso (hay que ir a los ajustes)
 
 var _rt = null            # AndroidRuntime
 var _lm = null            # android.location.LocationManager
 var _reloj = null         # android.os.SystemClock
+var _looper = null
+var _registrados := {}
 var _escucha = null       # LocationListener (proxy)
 var _receptor: _Receptor
 var _ultima_ns := 0
@@ -60,7 +63,12 @@ func _ready() -> void:
 		_iniciar()
 	else:
 		_poner_estado("sin_permiso")
-		OS.request_permission(PERMISO)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_RESUMED and estado == "sin_permiso" and PERMISO in OS.get_granted_permissions():
+		negado = false
+		_iniciar()
 
 
 func _exit_tree() -> void:
@@ -72,73 +80,100 @@ func _exit_tree() -> void:
 
 
 func pedir_permiso() -> void:
-	if OS.get_name() == "Android":
-		OS.request_permission(PERMISO)
+	if _rt != null:
+		if PERMISO in OS.get_granted_permissions():
+			_iniciar()
+		elif negado:
+			# Tras negarlo, Android puede no volver a mostrar el diálogo
+			abrir_ajustes()
+		else:
+			# Android 12+ requiere pedir ubicación aproximada y precisa juntas.
+			OS.request_permissions()
+
+
+# Abre la pantalla de ajustes de esta app (Permisos > Ubicación).
+# Al volver a la app, _notification detecta el permiso y arranca el GPS.
+func abrir_ajustes() -> void:
+	if _rt == null:
+		return
+	var actividad = _rt.getActivity()
+	var intent_cls = JavaClassWrapper.wrap("android.content.Intent")
+	var uri := "package:%s#Intent;action=android.settings.APPLICATION_DETAILS_SETTINGS;launchFlags=0x10000000;end" % actividad.getPackageName()
+	var intent = intent_cls.parseUri(uri, 0)
+	if JavaClassWrapper.get_exception() != null or intent == null:
+		push_warning("No se pudo crear el intent de ajustes")
+		return
+	actividad.startActivity(intent)
+	if JavaClassWrapper.get_exception() != null:
+		push_warning("No se pudieron abrir los ajustes de la app")
+
+
+func es_automatico() -> bool:
+	return OS.get_name() == "Android" or _simulado
 
 
 func _al_permiso(permiso: String, concedido: bool) -> void:
-	if permiso.ends_with("LOCATION"):
+	if permiso == PERMISO:
 		if concedido:
+			negado = false
 			_iniciar()
 		else:
+			negado = true
 			_poner_estado("sin_permiso")
+			estado_cambio.emit(estado)   # para que la interfaz ofrezca abrir los ajustes
 
 
 func _iniciar() -> void:
 	if _lm != null:
 		return
-	_lm = _rt.getApplicationContext().getSystemService("location")
+	_lm = _rt.getActivity().getSystemService("location")
 	_reloj = JavaClassWrapper.wrap("android.os.SystemClock")
-	if _lm == null:
+	_looper = JavaClassWrapper.wrap("android.os.Looper").getMainLooper()
+	if _lm == null or _looper == null:
+		_lm = null
+		_poner_estado("sin_gps")
 		return
-	_poner_estado("buscando")
-	# Pedir actualizaciones continuas (1 s). Se hace en el hilo de la
-	# interfaz de Android, que es el que tiene "Looper".
-	if JavaClassWrapper.has_method("create_proxy"):
-		_receptor = _Receptor.new()
-		_escucha = JavaClassWrapper.call("create_proxy", _receptor, PackedStringArray(["android.location.LocationListener"]))
-	if _escucha != null:
-		var activar := func():
-			for p in PROVEEDORES:
-				if _lm.isProviderEnabled(p):
-					_lm.requestLocationUpdates(p, 1000, 0.0, _escucha)
-		var actividad = _rt.getActivity()
-		actividad.runOnUiThread(_rt.createRunnableFromGodotCallable(activar))
+	_receptor = _Receptor.new()
+	_escucha = JavaClassWrapper.create_proxy(_receptor, PackedStringArray(["android.location.LocationListener"]))
+	_poner_estado("buscando" if _escucha != null else "sin_gps")
 
 
 func _process(delta: float) -> void:
-	if _lm == null or _simulado:
+	if _escucha == null or _simulado:
 		return
 	_t += delta
 	if _t < 0.5:
 		return
 	_t = 0.0
-	var alguno := false
+	var activos: Array[String] = []
 	for p in PROVEEDORES:
 		if _lm.isProviderEnabled(p):
-			alguno = true
-	if not alguno:
+			activos.append(p)
+			if not _registrados.has(p):
+				_lm.requestLocationUpdates(p, 1000, 0.0, _escucha, _looper)
+				if JavaClassWrapper.get_exception() == null:
+					_registrados[p] = true
+	if activos.is_empty():
 		_poner_estado("apagado")
 		return
 	# La lectura más reciente (y, si son casi igual de nuevas, la más precisa)
 	var mejor = null
 	var mejor_ns := 0
-	for p in PROVEEDORES:
+	var ahora: int = _reloj.elapsedRealtimeNanos()
+	for p in activos:
 		var loc = _lm.getLastKnownLocation(p)
-		if JavaClassWrapper.get_exception() != null or loc == null:
+		if JavaClassWrapper.get_exception() != null or loc == null or not loc.hasAccuracy():
 			continue
 		var ns: int = loc.getElapsedRealtimeNanos()
+		if (ahora - ns) / 1e9 > VIEJA_SEG:
+			continue
 		if mejor == null or ns > mejor_ns + 3000000000 or (absi(ns - mejor_ns) <= 3000000000 and loc.getAccuracy() < mejor.getAccuracy()):
 			mejor = loc
 			mejor_ns = ns
 	if mejor == null:
 		_poner_estado("buscando")
 		return
-	var edad: float = (_reloj.elapsedRealtimeNanos() - mejor_ns) / 1e9
-	if edad > VIEJA_SEG:
-		_poner_estado("buscando")
-		return
-	if mejor_ns == _ultima_ns:
+	if mejor_ns == _ultima_ns and estado == "ok":
 		return
 	_ultima_ns = mejor_ns
 	lat = mejor.getLatitude()

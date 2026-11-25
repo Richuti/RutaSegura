@@ -19,7 +19,9 @@ const UAM_LAT := 12.10849   # UAM, Managua (Plus Code 764M4P5V+96W)
 const UAM_LON := -86.25692
 const RADIO_KM := 150.0     # sismos a esta distancia o menos
 const MAG_MIN := 4.0        # magnitud mínima para alertar
-const VIGENCIA_S := 15 * 60 # solo sismos de los últimos 15 minutos
+# Solo sismos de los últimos 30 minutos. El USGS puede tardar 10-20 min en
+# publicar sismos fuera de EE. UU.; con menos margen la alerta se perdería.
+const VIGENCIA_S := 30 * 60
 const INTERVALO_S := 60.0
 
 var activo := true

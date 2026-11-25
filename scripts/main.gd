@@ -1,5 +1,5 @@
 # ==========================================================
-#  RutasSeguras - App Android (Godot 4.5)
+#  RutasSeguras - App Android (Godot 4.7)
 #  Fase 1: Edificios A y B en 3D + navegación estilo Waze con voz
 #  La ruta y cada indicación salen del GRAFO (graph.gd).
 # ==========================================================
@@ -8,6 +8,8 @@ extends Node3D
 const VELOCIDAD_CAMINAR := 1.4   # m/s (tiempo estimado real)
 const VEL_SIMULACION := 4.0      # m/s (demo acelerada)
 const AJUSTES := "user://ajustes.cfg"
+const BIENVENIDA := preload("res://scripts/bienvenida.gd")
+const BIENVENIDA_VISTA := "bienvenida_gps_vista"
 
 var mapa: Graph
 var escena: Escena3D
@@ -89,7 +91,18 @@ var evacuar_al_ubicar := false
 
 # GPS: el teléfono dice en qué parte del campus estás; tú dices el piso
 var gps: Gps
-var gps_seguir := true        # la ubicación la da el GPS (false = la marcaste a mano)
+const PRECISION_MAXIMA_GPS := 20.0
+# En una emergencia vale más una ubicación aproximada que ninguna
+const PRECISION_MAXIMA_EMERGENCIA := 40.0
+# Segundos de espera del GPS en una emergencia antes de insistir en marcar a mano
+const ESPERA_GPS_EMERGENCIA := 10.0
+# Segundos mínimos por piso antes de que el GPS dé por terminada una escalera
+const SEG_POR_PISO_ESCALERA := 6.0
+var estado_ubicacion := "buscando"
+var origen_manual := false    # en Android: el GPS no sirvió y marcaste tu ubicación a mano
+var bajar_desde := 0          # piso donde estás que aún no está en el grafo (0 = ninguno)
+var _toque_pendiente = null   # punto tocado en un edificio de varios pisos (espera el piso)
+var _plantas_grafo := {}      # letra -> pisos que tienen vértices en el grafo
 var ubic := {}                # tu ubicación GPS ajustada al grafo: pos, a, b, xz, precision
 var edificio_actual := ""
 var planta_actual := 1
@@ -98,7 +111,7 @@ var _edif_candidato := ""
 var _edif_cuenta := 0
 var _dir_gps := Vector3(0, 0, 1)
 var _lecturas: Array = []     # últimas lecturas GPS [tiempo, lat, lon, precisión]
-var accion_tras_planta := ""
+var destino_pendiente := ""
 var calib := {}               # calibración del GPS en curso
 var chip_gps: Button
 var chip_gps_punto: Icono
@@ -132,14 +145,14 @@ func _ready() -> void:
 	add_child(alerta)
 	alerta.sismo.connect(_al_sismo)
 	gps = Gps.new()
-	add_child(gps)
 	gps.posicion.connect(_al_gps)
-	gps.estado_cambio.connect(func(_e): _actualizar_chip_gps())
-	_actualizar_chip_gps()
+	gps.estado_cambio.connect(_al_estado_gps)
+	add_child(gps)
+	_al_estado_gps(gps.estado)
 	_preparar_voz()
 	_modo("explorar")
 	var cfg := ConfigFile.new()
-	if cfg.load(AJUSTES) != OK or not cfg.get_value("app", "bienvenida_vista", false):
+	if cfg.load(AJUSTES) != OK or not cfg.get_value("app", BIENVENIDA_VISTA, false):
 		mostrar_bienvenida()
 
 
@@ -147,11 +160,10 @@ func _ready() -> void:
 #  Acciones
 # ==========================================================
 func seleccionar_origen(nombre: String) -> void:
-	# Marcaste tu ubicación a mano: se deja de seguir el GPS
-	if gps_seguir and gps and gps.estado == "ok":
-		mostrar_toast("Ubicación manual. Toca «GPS» arriba para volver a usarlo")
-	gps_seguir = false
-	_actualizar_chip_gps()
+	if not _puede_marcar_a_mano():
+		return
+	origen_manual = gps.es_automatico()
+	bajar_desde = 0
 	origen = nombre
 	for i in op_origen.item_count:
 		if op_origen.get_item_text(i) == nombre:
@@ -162,18 +174,33 @@ func seleccionar_origen(nombre: String) -> void:
 		escena.poner_usuario(v.pos, Vector3(0, 0, 1), true)
 	vista_previa = {}
 	_modo("explorar")
+	_actualizar_chip_gps()
+	_actualizar_cercanas()
+	_actualizar_corte()
 	if evacuar_al_ubicar:
 		evacuar_al_ubicar = false
 		emergencia.call_deferred()
 
 
+# En PC siempre. En Android, solo mientras el GPS no da una ubicación útil.
+func _puede_marcar_a_mano() -> bool:
+	return gps == null or not gps.es_automatico() or not _usar_gps()
+
+
+# Sin GPS útil, pero con una ubicación marcada a mano: se usa esa
+func _falta_ubicacion() -> bool:
+	return gps.es_automatico() and not _usar_gps() and not (origen_manual and origen != "")
+
+
 func emergencia() -> void:
+	if _falta_ubicacion():
+		evacuar_al_ubicar = true
+		destino_pendiente = ""
+		_pedir_ubicacion_gps()
+		_esperar_gps_en_emergencia()
+		return
 	if _usar_gps():
-		# El GPS sabe el edificio, no el piso: si no lo sabemos, se pregunta primero
-		if not planta_confirmada:
-			accion_tras_planta = "emergencia"
-			_preguntar_planta()
-			return
+		evacuar_al_ubicar = false
 		var rg := _ruta_desde_ubic("")
 		if rg.is_empty():
 			mostrar_toast("No hay ruta disponible. Busca otra salida.")
@@ -201,13 +228,19 @@ func ver_ruta(destino: String = "") -> void:
 			if op_destino.get_item_text(i) == destino:
 				op_destino.selected = i
 	var i_dest := op_destino.selected
-	if origen == "" and not _usar_gps():
-		mostrar_toast("Elige dónde estás")
-		return
 	if i_dest <= 0:
 		mostrar_toast("Elige a dónde vas")
 		return
-	var r := _ruta_desde_ubic(op_destino.get_item_text(i_dest)) if _usar_gps() else mapa.rutaMasCorta(origen, op_destino.get_item_text(i_dest), bloqueados)
+	var nombre := op_destino.get_item_text(i_dest)
+	if _falta_ubicacion():
+		if not evacuar_al_ubicar:
+			destino_pendiente = nombre
+		_pedir_ubicacion_gps()
+		return
+	if origen == "":
+		mostrar_toast("Elige dónde estás")
+		return
+	var r := _ruta_desde_ubic(nombre) if _usar_gps() else mapa.rutaMasCorta(origen, nombre, bloqueados)
 	if r.is_empty():
 		mostrar_toast("No hay ruta disponible con ese pasillo cerrado")
 		return
@@ -219,8 +252,19 @@ func ver_ruta(destino: String = "") -> void:
 
 
 func vamos() -> void:
-	if not vista_previa.is_empty():
-		_iniciar_navegacion(vista_previa.camino, Estilo.AZUL, false)
+	if vista_previa.is_empty():
+		return
+	var camino: Array = vista_previa.camino
+	if _falta_ubicacion():
+		_pedir_ubicacion_gps()
+		return
+	if _usar_gps():
+		var r := _ruta_desde_ubic(camino[-1].city)
+		if r.is_empty():
+			mostrar_toast("No hay ruta disponible")
+			return
+		camino = r.camino
+	_iniciar_navegacion(camino, Estilo.AZUL, false)
 
 
 # Todas las aristas de una escalera (para bloquearla completa)
@@ -267,6 +311,8 @@ func terminar() -> void:
 		escena.poner_usuario(ubic.pos, _dir_gps)
 	elif origen != "":
 		escena.poner_usuario(mapa.buscar(origen).pos)
+	else:
+		escena.poner_usuario(Vector3.ZERO, Vector3.FORWARD, false)
 	_modo("explorar")
 
 
@@ -279,23 +325,84 @@ func _al_tocar_mapa(p: Vector3) -> void:
 	# ¿Tocaste una zona segura? -> ruta hacia ella
 	for v in mapa.vertexs:
 		if v.segura and Vector2(p.x - v.pos.x, p.z - v.pos.z).length() < 12.0:
-			if origen != "":
-				ver_ruta(v.city)
-			else:
-				mostrar_toast("Primero marca dónde estás")
+			ver_ruta(v.city)
 			return
-	# Si no, el punto del grafo más cercano es tu ubicación
+	if not _puede_marcar_a_mano():
+		return
+	# Si no, el punto del grafo más cercano es tu ubicación. En un edificio
+	# de varios pisos, primero se pregunta el piso (el toque no lo dice).
+	var xz := Vector2(p.x, p.z)
+	var e := Campus.edificio_xz(xz)
+	if e != "" and Campus.plantas_de(e) > 1:
+		_toque_pendiente = xz
+		edificio_actual = e
+		_preguntar_planta()
+		return
+	_marcar_en(xz, 1)
+
+
+# Ubicación marcada a mano: el vértice más cercano en ese piso.
+# Si el piso aún no está en el grafo, se parte de la planta baja.
+func _marcar_en(xz: Vector2, planta: int) -> void:
+	var e := Campus.edificio_xz(xz)
+	var planta_grafo := planta
+	if e != "" and planta > _plantas_mapeadas(e):
+		planta_grafo = 1
 	var mejor: Vertex = null
 	var dmin := 16.0
 	for v in mapa.vertexs:
-		var d := Vector2(p.x - v.pos.x, p.z - v.pos.z).length()
-		if not v.segura and not Campus.es_escalera(v) and d < dmin:
+		if v.segura or Campus.es_escalera(v) or Campus.planta_de(v) != planta_grafo:
+			continue
+		if e != "" and Campus.zona(v) != e:
+			continue
+		var d := Vector2(xz.x - v.pos.x, xz.y - v.pos.z).length()
+		if d < dmin:
 			dmin = d
 			mejor = v
-	if mejor:
-		seleccionar_origen(mejor.city)
-		_vibrar(40)
+	if mejor == null:
+		mostrar_toast("Toca más cerca de un pasillo o elige tu lugar en la lista")
+		return
+	var aviso_bajar := evacuar_al_ubicar
+	evacuar_al_ubicar = false
+	seleccionar_origen(mejor.city)
+	bajar_desde = planta if planta_grafo != planta else 0
+	_vibrar(40)
+	if bajar_desde > 0:
+		_avisar_bajar(e)
+	else:
 		mostrar_toast("Estás en " + mejor.city)
+	if aviso_bajar:
+		emergencia.call_deferred()
+
+
+# Pisos de un edificio que tienen vértices en el grafo
+func _plantas_mapeadas(letra: String) -> int:
+	if not _plantas_grafo.has(letra):
+		var n := 1
+		for v in mapa.vertexs:
+			if Campus.zona(v) == letra:
+				n = maxi(n, Campus.planta_de(v))
+		_plantas_grafo[letra] = n
+	return _plantas_grafo[letra]
+
+
+func _avisar_bajar(letra: String) -> void:
+	var txt := "Tu piso del edificio %s aún no está en el mapa. Baja por la escalera más cercana a la planta baja." % letra
+	mostrar_toast(txt)
+	_hablar(txt, true)
+
+
+# Emergencia sin ubicación: se espera un poco al GPS y luego se pide marcarla a mano
+func _esperar_gps_en_emergencia() -> void:
+	await get_tree().create_timer(ESPERA_GPS_EMERGENCIA).timeout
+	if not evacuar_al_ubicar or not nav.is_empty() or not _falta_ubicacion():
+		return
+	if hoja_planta.visible:
+		return
+	var txt := "No logro ubicarte con el GPS. Toca en el mapa dónde estás o elige tu lugar en la lista."
+	mostrar_toast(txt)
+	_hablar(txt, true)
+	_vibrar(200)
 
 
 # ==========================================================
@@ -334,7 +441,7 @@ func salir_sismo() -> void:
 	if not sismo_ui.visible:
 		return
 	sismo_ui.visible = false
-	if origen != "" or _usar_gps():
+	if gps.es_automatico() or origen != "":
 		emergencia()
 	else:
 		evacuar_al_ubicar = true
@@ -581,7 +688,7 @@ func _iniciar_navegacion(camino: Array, color: Color, es_emergencia: bool, anunc
 		total += l
 	nav = {"camino": camino, "largos": largos, "total": total, "i": 0, "t": 0.0,
 		"color": color, "fin": false, "emergencia": es_emergencia, "tramos": _tramos(camino),
-		"gps": _usar_gps(), "fuera": -1.0, "esc_avisada": -1}
+		"gps": gps.es_automatico(), "fuera": -1.0, "esc_avisada": -1}
 	aviso_tramo = -1
 	aviso_ahora = -1
 	escena.mostrar_ruta(camino, color)
@@ -598,6 +705,9 @@ func _iniciar_navegacion(camino: Array, color: Color, es_emergencia: bool, anunc
 		_hablar("Emergencia. Te llevo a la zona segura más cercana: %s. Son %d metros." % [_para_voz(dest.city), roundi(total)], true)
 	else:
 		_hablar("Iniciando ruta hacia %s." % _para_voz(dest.city), true)
+	if anunciar and bajar_desde > 0:
+		_hablar("Primero baja por la escalera más cercana a la planta baja.")
+		mostrar_toast("Primero baja por la escalera más cercana a la planta baja")
 	_actualizar_nav()
 
 
@@ -1059,100 +1169,32 @@ void fragment() {
 # ---------------- Bienvenida ----------------
 func mostrar_bienvenida() -> void:
 	if bienvenida:
-		bienvenida.queue_free()
-	bienvenida = Control.new()
-	bienvenida.set_anchors_preset(Control.PRESET_FULL_RECT)
-	raiz.add_child(bienvenida)
-
-	var fondo := TextureRect.new()
-	var grad := Gradient.new()
-	grad.set_color(0, Color("#0F8F7A"))
-	grad.set_color(1, Color("#0B4F5C"))
-	var gt := GradientTexture2D.new()
-	gt.gradient = grad
-	gt.fill_from = Vector2(0, 0)
-	gt.fill_to = Vector2(0.4, 1)
-	fondo.texture = gt
-	fondo.stretch_mode = TextureRect.STRETCH_SCALE
-	fondo.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bienvenida.add_child(fondo)
-
-	var m := MarginContainer.new()
-	m.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for lado in ["margin_left", "margin_right"]:
-		m.add_theme_constant_override(lado, 48)
-	m.add_theme_constant_override("margin_top", 120)
-	m.add_theme_constant_override("margin_bottom", 56)
-	bienvenida.add_child(m)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 0)
-	m.add_child(v)
-
-	var logo := PanelContainer.new()
-	logo.add_theme_stylebox_override("panel", Estilo.caja(Color.WHITE, 46, true))
-	logo.custom_minimum_size = Vector2(150, 150)
-	logo.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	var esc := Icono.new("escudo", Estilo.TEAL, 150)
-	esc.escala = 0.62
-	logo.add_child(esc)
-	v.add_child(logo)
-	v.add_child(_espacio(46))
-
-	var titulo := HBoxContainer.new()
-	titulo.add_theme_constant_override("separation", 14)
-	titulo.add_child(Estilo.texto("RutasSeguras", 62, Estilo.F_EXTRA, Color.WHITE))
-	var uam := Estilo.chip("UAM", Color.WHITE, Estilo.TEAL, 26)
-	uam.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	titulo.add_child(uam)
-	v.add_child(titulo)
-	var lema := Estilo.texto("Nunca te pierdas en el campus.\nY en una emergencia, llega seguro.", 28, Estilo.F_MEDIA, Color(1, 1, 1, 0.86))
-	v.add_child(lema)
-	v.add_child(_espacio(56))
-
-	for f in [["ir", "Rutas paso a paso", "Como Waze, dentro de la universidad"],
-			["escudo", "Zona segura más cercana", "Un toque y te guía en una emergencia"],
-			["voz", "Te guía con voz", "Sin tener que mirar la pantalla"]]:
-		var fila := HBoxContainer.new()
-		fila.add_theme_constant_override("separation", 22)
-		var c := PanelContainer.new()
-		c.add_theme_stylebox_override("panel", Estilo.caja(Color(1, 1, 1, 0.14), 22, false))
-		c.custom_minimum_size = Vector2(76, 76)
-		var ic := Icono.new(f[0], Color.WHITE, 76)
-		ic.escala = 0.55
-		c.add_child(ic)
-		fila.add_child(c)
-		var tv := VBoxContainer.new()
-		tv.alignment = BoxContainer.ALIGNMENT_CENTER
-		tv.add_theme_constant_override("separation", 0)
-		tv.add_child(Estilo.texto(f[1], 27, Estilo.F_NEGRITA, Color.WHITE))
-		tv.add_child(Estilo.texto(f[2], 21, Estilo.F_MEDIA, Color(1, 1, 1, 0.7)))
-		fila.add_child(tv)
-		v.add_child(fila)
-		v.add_child(_espacio(26))
-
-	var resto := Control.new()
-	resto.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(resto)
-	var btn := Estilo.boton("Comenzar", Color.WHITE, Estilo.TEAL, 32, 30)
-	btn.custom_minimum_size = Vector2(0, 104)
-	btn.pressed.connect(cerrar_bienvenida)
-	v.add_child(btn)
-	v.add_child(_espacio(18))
-	var pie := Estilo.texto("Programación Estructurada  ·  Estructura de datos: Grafos", 19, Estilo.F_MEDIA, Color(1, 1, 1, 0.55))
-	pie.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(pie)
+		return
+	var introduccion := BIENVENIDA.new()
+	introduccion.usa_gps = OS.get_name() == "Android"
+	introduccion.falta_permiso = gps.estado == "sin_permiso"
+	introduccion.terminar.connect(cerrar_bienvenida)
+	bienvenida = introduccion
+	raiz.add_child(introduccion)
 
 
-func cerrar_bienvenida() -> void:
+func cerrar_bienvenida(activar_ubicacion: bool = false) -> void:
 	if not bienvenida:
 		return
-	_guardar_ajuste("bienvenida_vista", true)
-	var b := bienvenida
-	var tw := b.create_tween()
-	tw.tween_property(b, "modulate:a", 0.0, 0.35)
-	tw.tween_callback(b.queue_free)
+	_guardar_ajuste(BIENVENIDA_VISTA, true)
+	bienvenida.hide()
+	bienvenida.queue_free()
 	bienvenida = null
-	_hablar("Bienvenido a RutasSeguras. Toca el mapa para marcar dónde estás.")
+	if activar_ubicacion:
+		gps.pedir_permiso()
+	if estado_ubicacion == "planta":
+		_mostrar_planta_si_corresponde.call_deferred()
+
+
+func _mostrar_planta_si_corresponde() -> void:
+	if not bienvenida and not sismo_ui.visible and not hoja_planta.visible and estado_ubicacion == "planta":
+		hoja_gps.hide()
+		_preguntar_planta()
 
 
 func _espacio(alto: int) -> Control:
@@ -1336,9 +1378,7 @@ func _crear_controles() -> void:
 	btn_centrar.pressed.connect(func():
 		if not nav.is_empty():
 			return
-		if gps.estado == "ok" and not ubic.is_empty():
-			if not gps_seguir:
-				usar_gps()
+		if _usar_gps():
 			escena.enfocar(ubic.pos)
 		else:
 			escena.vista_general())
@@ -1403,7 +1443,7 @@ func _crear_cercanas() -> void:
 func _actualizar_cercanas() -> void:
 	for c in cercanas_fila.get_children():
 		c.queue_free()
-	pista.visible = origen == ""
+	pista.visible = origen == "" and _puede_marcar_a_mano()
 	cercanas_fila.visible = origen != ""
 	if origen == "":
 		return
@@ -1798,17 +1838,51 @@ func _crear_hoja_llegada() -> void:
 #     piso y desde ahí se calcula la ruta (Dijkstra).
 # ==========================================================
 func _usar_gps() -> bool:
-	return gps != null and gps_seguir and gps.estado == "ok" and not ubic.is_empty()
+	return gps != null and gps.estado == "ok" and planta_confirmada and not ubic.is_empty()
 
 
-func usar_gps() -> void:
-	gps_seguir = true
+func _precision_maxima() -> float:
+	var emergencia_activa: bool = evacuar_al_ubicar or sismo_ui.visible \
+		or (not nav.is_empty() and nav.emergencia and not nav.fin)
+	return PRECISION_MAXIMA_EMERGENCIA if emergencia_activa else PRECISION_MAXIMA_GPS
+
+
+func _pedir_ubicacion_gps() -> void:
+	if gps.estado == "ok" and estado_ubicacion == "planta":
+		_preguntar_planta()
+		return
+	if gps.estado == "sin_permiso" or estado_ubicacion == "sin_cobertura":
+		_abrir_hoja_gps()
+		return
+	mostrar_toast("%s · Si tarda, toca en el mapa dónde estás" % chip_gps.text)
+
+
+func _al_estado_gps(estado: String) -> void:
+	if estado != "ok":
+		_invalidar_ubicacion(estado)
 	_actualizar_chip_gps()
-	if gps.estado == "ok":
-		_al_gps(gps.lat, gps.lon, gps.precision)
-		mostrar_toast("Usando tu ubicación GPS")
-	else:
-		mostrar_toast("Esperando señal GPS…")
+
+
+func _invalidar_ubicacion(estado: String) -> void:
+	estado_ubicacion = estado
+	_edif_cuenta = 0
+	# Si marcaste tu ubicación a mano, una lectura mala del GPS no la borra
+	if origen_manual and origen != "":
+		ubic = {}
+		return
+	var tenia_ubicacion := not ubic.is_empty() or origen != ""
+	ubic = {}
+	origen = ""
+	bajar_desde = 0
+	if estado != "planta" and _toque_pendiente == null:
+		_cerrar_hoja_planta()
+	if tenia_ubicacion and (modo == "explorar" or modo == "vista_previa"):
+		escena.poner_usuario(Vector3.ZERO, Vector3.FORWARD, false)
+		_actualizar_corte()
+		_actualizar_cercanas()
+	elif tenia_ubicacion and modo == "navegar":
+		_actualizar_chip_gps()
+		mostrar_toast(chip_gps.text)
 
 
 func _al_gps(lat: float, lon: float, prec: float) -> void:
@@ -1817,13 +1891,22 @@ func _al_gps(lat: float, lon: float, prec: float) -> void:
 	while _lecturas.size() > 12:
 		_lecturas.pop_front()
 	var l := Geo.a_local(lat, lon)
+	if not is_finite(prec) or prec <= 0.0 or prec > _precision_maxima():
+		_invalidar_ubicacion("impreciso")
+		_actualizar_chip_gps()
+		return
 	if not Geo.en_campus(l):
-		ubic = {}
+		edificio_actual = ""
+		planta_actual = 1
+		planta_confirmada = true
+		_invalidar_ubicacion("fuera")
 		_actualizar_chip_gps()
 		return
 	_actualizar_edificio(l)
-	if not gps_seguir:
+	if not planta_confirmada:
+		_invalidar_ubicacion("planta")
 		_actualizar_chip_gps()
+		_mostrar_planta_si_corresponde()
 		return
 	_ubicar(l, prec)
 
@@ -1844,29 +1927,48 @@ func _actualizar_edificio(l: Vector2) -> void:
 	_edif_cuenta = 0
 	var navegando: bool = not nav.is_empty() and nav.gps and not nav.fin
 	if e == "" or Campus.plantas_de(e) == 1 or navegando:
-		# Afuera, en A (solo planta baja mapeada) o entrando por la ruta: planta baja
-		if not navegando or e == "":
+		# Durante la ruta, solo la confirmación de escalera cambia el piso.
+		if not navegando:
 			planta_actual = 1
 		planta_confirmada = true
 		_cerrar_hoja_planta()
 	else:
 		planta_actual = 1
 		planta_confirmada = false
-		_preguntar_planta()
 
 
 func _ubicar(l: Vector2, prec: float) -> void:
-	var aj := _ajustar_al_grafo(l, planta_actual, edificio_actual)
+	# Un piso que aún no está en el grafo (por ejemplo, A planta 2): se parte
+	# de la planta baja y se pide bajar por la escalera más cercana.
+	var planta_grafo := planta_actual
+	var navegando: bool = not nav.is_empty() and nav.gps and not nav.fin
+	if not navegando:
+		var antes_bajar := bajar_desde
+		bajar_desde = 0
+		if edificio_actual != "" and planta_actual > _plantas_mapeadas(edificio_actual):
+			planta_grafo = 1
+			bajar_desde = planta_actual
+			if antes_bajar != bajar_desde:
+				_avisar_bajar(edificio_actual)
+	var aj := _ajustar_al_grafo(l, planta_grafo, edificio_actual)
 	if aj.is_empty():
+		if not nav.is_empty() and nav.gps and not nav.fin:
+			ubic = {}
+			_avance_gps(l, prec)
+			return
+		_invalidar_ubicacion("sin_cobertura")
+		_actualizar_chip_gps()
 		return
 	aj["xz"] = l
 	aj["precision"] = prec
 	var antes := ubic
 	ubic = aj
+	estado_ubicacion = "ok"
+	origen_manual = false   # el GPS vuelve a mandar en cuanto da una ubicación útil
 	if not antes.is_empty() and antes.pos.distance_to(aj.pos) > 1.5:
 		_dir_gps = (aj.pos - antes.pos).normalized()
-	_actualizar_chip_gps()
 	if not nav.is_empty() and nav.gps and not nav.fin:
+		_actualizar_chip_gps()
 		_avance_gps(l, prec)
 		return
 	if modo != "explorar" and modo != "vista_previa":
@@ -1875,18 +1977,20 @@ func _ubicar(l: Vector2, prec: float) -> void:
 	var cerca: Vertex = aj.a if aj.pos.distance_to(aj.a.pos) <= aj.pos.distance_to(aj.b.pos) else aj.b
 	if cerca.city != origen:
 		origen = cerca.city
-		for i in op_origen.item_count:
-			if op_origen.get_item_text(i) == origen:
-				op_origen.selected = i
 		if modo == "explorar":
 			_actualizar_cercanas()
+	_actualizar_chip_gps()
 	escena.poner_usuario(aj.pos, _dir_gps, true)
 	if antes.is_empty() and modo == "explorar":
 		escena.enfocar(aj.pos)
 	_actualizar_corte()
-	if evacuar_al_ubicar and planta_confirmada:
+	if evacuar_al_ubicar:
 		evacuar_al_ubicar = false
 		emergencia.call_deferred()
+	elif destino_pendiente != "":
+		var destino := destino_pendiente
+		destino_pendiente = ""
+		ver_ruta.call_deferred(destino)
 
 
 # Punto más cercano del grafo en tu piso y tu zona (aristas planas, sin escaleras)
@@ -2009,14 +2113,22 @@ func _avance_gps(l: Vector2, prec: float) -> void:
 	_actualizar_nav()
 
 
-# En las escaleras el GPS no sabe el piso. Se avanza con el botón o, si te
-# alejas más de 8 m de la escalera siguiendo la ruta, se asume que bajaste.
+# Respaldo del botón "Ya estoy en planta X": el GPS no sabe el piso, así que
+# solo se da la escalera por terminada si (1) pasó el tiempo mínimo para bajar
+# esos pisos y (2) el GPS te ve siguiendo la ruta, a más de 8 m de la escalera.
 func _detectar_fin_escalera(t: int, l: Vector2, prec: float) -> void:
 	var camino: Array = nav.camino
 	var tramos: Array = nav.tramos
+	var ahora := Time.get_ticks_msec() / 1000.0
+	if nav.get("esc_tramo", -1) != t:
+		nav.esc_tramo = t
+		nav.esc_inicio = ahora
 	var ini: Vertex = camino[tramos[t].desde]
 	var fin_i: int = tramos[t].hasta + 1
-	if fin_i >= camino.size() - 1:
+	var pisos := absi(Campus.planta_de(ini) - Campus.planta_de(camino[fin_i]))
+	if ahora - nav.esc_inicio < SEG_POR_PISO_ESCALERA * maxi(pisos, 1):
+		return
+	if prec > PRECISION_MAXIMA_GPS or fin_i >= camino.size() - 1:
 		return
 	var inicio := Vector2(ini.pos.x, ini.pos.z)
 	var recorrido := 0.0
@@ -2024,8 +2136,9 @@ func _detectar_fin_escalera(t: int, l: Vector2, prec: float) -> void:
 		var pa := Vector2(camino[k].pos.x, camino[k].pos.z)
 		var pb := Vector2(camino[k + 1].pos.x, camino[k + 1].pos.z)
 		var q := Geometry2D.get_closest_point_to_segment(l, pa, pb)
-		if q.distance_to(l) < maxf(10.0, prec) and recorrido + pa.distance_to(q) > 8.0 and l.distance_to(inicio) > 8.0:
+		if q.distance_to(l) < 10.0 and recorrido + pa.distance_to(q) > 8.0 and l.distance_to(inicio) > 8.0:
 			_confirmar_escalera()
+			mostrar_toast("Llegaste a " + _nombre_planta(planta_actual))
 			return
 		recorrido += pa.distance_to(pb)
 
@@ -2117,6 +2230,7 @@ func _preguntar_planta() -> void:
 	planta_letra.text = edificio_actual
 	planta_tile.add_theme_stylebox_override("panel", Estilo.caja(datos[2], 26, false))
 	for c in planta_botones.get_children():
+		planta_botones.remove_child(c)
 		c.queue_free()
 	for p in range(Campus.plantas_de(edificio_actual), 0, -1):
 		var activo := p == planta_actual and planta_confirmada
@@ -2135,16 +2249,18 @@ func _preguntar_planta() -> void:
 func _elegir_planta(p: int) -> void:
 	planta_actual = p
 	planta_confirmada = true
+	var toque = _toque_pendiente
 	_cerrar_hoja_planta()
+	if toque != null:
+		_marcar_en(toque, p)
+		return
 	mostrar_toast("%s · %s" % ["Planta baja" if p == 1 else "Planta %d" % p, "Edificio " + edificio_actual])
-	if gps.estado == "ok":
+	if gps.estado == "ok" and estado_ubicacion in ["planta", "ok", "sin_cobertura"]:
 		_ubicar(Geo.a_local(gps.lat, gps.lon), gps.precision)
-	if accion_tras_planta == "emergencia":
-		accion_tras_planta = ""
-		emergencia()
 
 
 func _cerrar_hoja_planta() -> void:
+	_toque_pendiente = null
 	if hoja_planta:
 		hoja_planta.visible = false
 
@@ -2155,7 +2271,7 @@ func _actualizar_chip_gps() -> void:
 		return
 	var txt := ""
 	var color := Estilo.TENUE
-	match gps.estado if gps else "sin_gps":
+	match estado_ubicacion if gps and gps.es_automatico() else "sin_gps":
 		"sin_gps":
 			txt = "Sin GPS"
 		"sin_permiso":
@@ -2166,23 +2282,36 @@ func _actualizar_chip_gps() -> void:
 			color = Estilo.AMBAR
 		"buscando":
 			txt = "Buscando GPS…"
-		_:
-			if not Geo.en_campus(Geo.a_local(gps.lat, gps.lon)):
-				txt = "Fuera de la UAM"
-				color = Estilo.AMBAR
-			elif not gps_seguir:
-				txt = "Manual · usar GPS"
-				color = Estilo.AZUL
+		"impreciso":
+			txt = "Señal GPS débil"
+			color = Estilo.AMBAR
+		"fuera":
+			txt = "Fuera de la UAM"
+			color = Estilo.AMBAR
+		"planta":
+			txt = "Elige tu piso"
+			color = Estilo.AMBAR
+		"sin_cobertura":
+			txt = "Piso sin ruta"
+			color = Estilo.AMBAR
+		"ok":
+			color = Estilo.VERDE
+			if edificio_actual == "":
+				txt = "GPS · afuera"
 			else:
-				color = Estilo.VERDE
-				if edificio_actual == "":
-					txt = "GPS · afuera"
-				elif not planta_confirmada:
-					txt = "GPS · Edif. %s · ¿piso?" % edificio_actual
-					color = Estilo.AMBAR
-				else:
-					txt = "GPS · %s · %s" % [edificio_actual, "PB" if planta_actual == 1 else "Planta %d" % planta_actual]
+				txt = "GPS · %s · %s" % [edificio_actual, "PB" if planta_actual == 1 else "Planta %d" % planta_actual]
+				if bajar_desde > 0:
+					txt += " · baja a PB"
+	if gps and gps.es_automatico() and origen_manual and origen != "" and estado_ubicacion != "ok":
+		txt = "Ubicación manual"
+		color = Estilo.AZUL
 	chip_gps.text = txt
+	if gps and gps.es_automatico():
+		# Con GPS útil el origen es automático; sin él se puede marcar a mano
+		op_origen.disabled = not _puede_marcar_a_mano()
+		op_origen.set_item_text(0, origen if origen != "" else ("¿Dónde estás?" if not op_origen.disabled else txt))
+		op_origen.selected = 0
+		pista.visible = origen == "" and not op_origen.disabled
 	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
 		chip_gps.add_theme_color_override(c, color)
 	chip_gps_punto.poner("punto", color)
@@ -2242,40 +2371,50 @@ func _crear_hoja_gps() -> void:
 
 
 func _abrir_hoja_gps() -> void:
-	if gps.estado == "sin_permiso":
-		gps.pedir_permiso()
+	if estado_ubicacion == "planta":
+		_preguntar_planta()
+		return
 	for c in gps_acciones.get_children():
+		gps_acciones.remove_child(c)
 		c.queue_free()
 	var det := ""
-	match gps.estado:
+	match estado_ubicacion if gps.es_automatico() else "sin_gps":
 		"sin_gps":
 			gps_titulo.text = "Este equipo no tiene GPS"
 			det = "En el celular, la app te ubica sola dentro de la UAM. Aquí puedes marcar dónde estás tocando el mapa."
 		"sin_permiso":
 			gps_titulo.text = "Falta el permiso de ubicación"
-			det = "Acepta el permiso para que la app sepa dónde estás. Si lo negaste, actívalo en Ajustes > Apps > RutasSeguras > Permisos."
+			det = "Elige «Precisa» y «Mientras usas la app». También puedes cambiar el permiso en los ajustes de Android."
 		"apagado":
 			gps_titulo.text = "La ubicación está apagada"
 			det = "Activa «Ubicación» en el panel rápido del teléfono."
 		"buscando":
 			gps_titulo.text = "Buscando señal GPS…"
 			det = "Dentro de los edificios la señal es más débil. Acércate a una ventana o sal un momento."
-		_:
-			var l := Geo.a_local(gps.lat, gps.lon)
-			if not Geo.en_campus(l):
-				gps_titulo.text = "Estás fuera de la UAM"
-				det = "Estás a %d m del campus. Cuando llegues, la app te ubicará sola." % roundi(l.distance_to(Geo.CENTRO))
-			else:
-				gps_titulo.text = ("Edificio %s · %s" % [edificio_actual, "Planta baja" if planta_actual == 1 else "Planta %d" % planta_actual]) if edificio_actual != "" else "Estás afuera, en el campus"
-				det = "Precisión del GPS: ±%d m." % roundi(gps.precision)
-				if not ubic.is_empty() and gps_seguir:
-					det += "  Cerca de: %s." % origen
-				det += "\n" + ("GPS calibrado en el campus." if Geo.calibrado else "Sin calibrar: si tu punto no coincide con el mapa, calibra una vez.")
+		"impreciso":
+			gps_titulo.text = "Señal GPS débil"
+			det = "Precisión actual: ±%d m. Esperando una lectura más precisa." % roundi(gps.precision)
+		"fuera":
+			gps_titulo.text = "Estás fuera de la UAM"
+			det = "Cuando llegues al campus, la app te ubicará automáticamente."
+		"sin_cobertura":
+			gps_titulo.text = "Este piso aún no está mapeado"
+			det = "Edificio %s · Planta %d" % [edificio_actual, planta_actual]
+		"ok":
+			gps_titulo.text = ("Edificio %s · %s" % [edificio_actual, "Planta baja" if planta_actual == 1 else "Planta %d" % planta_actual]) if edificio_actual != "" else "Estás afuera, en el campus"
+			det = "Precisión del GPS: ±%d m. Cerca de %s." % [roundi(gps.precision), origen]
 	gps_detalle.text = det
-	var en_uam: bool = gps.estado == "ok" and Geo.en_campus(Geo.a_local(gps.lat, gps.lon))
-	if en_uam and not gps_seguir:
-		_accion_gps("Usar mi ubicación GPS", Estilo.TEAL, Color.WHITE, usar_gps)
-	if en_uam and edificio_actual != "" and Campus.plantas_de(edificio_actual) > 1:
+	if gps.estado == "sin_permiso":
+		if gps.negado:
+			# Android ya no muestra el diálogo: hay que ir a los ajustes de la app
+			gps_detalle.text += "\nNegaste el permiso antes: actívalo en Ajustes > Permisos > Ubicación."
+			_accion_gps("Abrir ajustes de la app", Estilo.TEAL, Color.WHITE, gps.abrir_ajustes)
+		else:
+			_accion_gps("Activar ubicación", Estilo.TEAL, Color.WHITE, gps.pedir_permiso)
+	if gps.es_automatico() and _puede_marcar_a_mano():
+		_accion_gps("Marcar mi ubicación en el mapa", Color("#EEF3F4"), Estilo.TINTA, func():
+			mostrar_toast("Toca en el mapa dónde estás"))
+	if estado_ubicacion in ["ok", "sin_cobertura"] and Campus.plantas_de(edificio_actual) > 1:
 		_accion_gps("Cambiar de planta", Color("#EEF3F4"), Estilo.TINTA, _preguntar_planta)
 	if gps.estado == "ok":
 		_accion_gps("Calibrar GPS en el campus", Color("#EEF3F4"), Estilo.TINTA, _iniciar_calibracion)
@@ -2304,7 +2443,7 @@ func _accion_gps(texto: String, fondo: Color, color: Color, accion: Callable) ->
 # ---------------- Calibración (dos puntos conocidos) ----------------
 func _iniciar_calibracion() -> void:
 	calib = {"paso": 1}
-	aviso_calib_txt.text = "Calibrar GPS (1 de 2): párate en un lugar que reconozcas, por ejemplo la entrada norte del Edificio A, y tócalo en el mapa."
+	aviso_calib_txt.text = "Calibrar GPS (1 de 2): párate en un lugar que reconozcas, por ejemplo la entrada este del Edificio A, y tócalo en el mapa."
 	aviso_calib.visible = true
 	_aparecer(aviso_calib)
 	_hablar("Párate en un lugar que reconozcas y tócalo en el mapa.", true)
@@ -2331,7 +2470,7 @@ func _punto_calibracion(l: Vector2) -> void:
 	if calib.paso == 1:
 		calib = {"paso": 2, "l1": l, "g1": g}
 		Geo.calibrar_1(l, g)
-		aviso_calib_txt.text = "Calibrar GPS (2 de 2): camina a otro lugar a más de 40 m, por ejemplo la salida sur del Edificio B, y tócalo en el mapa."
+		aviso_calib_txt.text = "Calibrar GPS (2 de 2): camina a otro lugar a más de 40 m, por ejemplo la salida oeste del Edificio B, y tócalo en el mapa."
 		_hablar("Bien. Ahora camina a otro lugar lejano y tócalo en el mapa.", true)
 		_vibrar(60)
 		return
@@ -2350,5 +2489,4 @@ func _punto_calibracion(l: Vector2) -> void:
 	mostrar_toast("GPS calibrado ✓ (valores copiados)")
 	_hablar("GPS calibrado.", true)
 	_vibrar(120)
-	if gps_seguir:
-		_al_gps(gps.lat, gps.lon, gps.precision)
+	_al_gps(gps.lat, gps.lon, gps.precision)

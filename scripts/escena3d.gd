@@ -655,13 +655,13 @@ func _suelo() -> void:
 func _vias_y_parqueos() -> void:
 	var asfalto := _mat(ASFALTO, 0.95)
 	var linea := _mat(Color("#FFFFFF"), 0.8)
-	# Calles norte y sur
+	# Calles este y oeste
 	add_child(_caja(Vector3(190, 0.06, 9), Vector3(-15, 0.03, -16), asfalto))
 	add_child(_caja(Vector3(190, 0.06, 9), Vector3(-15, 0.03, 131), asfalto))
 	for x in range(-105, 80, 8):
 		add_child(_caja(Vector3(3.5, 0.07, 0.25), Vector3(x, 0.04, -16), linea))
 		add_child(_caja(Vector3(3.5, 0.07, 0.25), Vector3(x, 0.04, 131), linea))
-	# Parqueo oeste con líneas y carros
+	# Parqueo norte con líneas y carros
 	add_child(_caja(Vector3(26, 0.06, 126), Vector3(-66, 0.03, 57), asfalto))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
