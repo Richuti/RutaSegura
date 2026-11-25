@@ -1,8 +1,8 @@
 class Vertex:
     def __init__(self, city: str, segura: bool = False):
-        self.city = city          
-        self.segura = segura     
-        self.neig = []           
+        self.city = city
+        self.segura = segura
+        self.neig = []
 
 
 class Graph:
@@ -34,7 +34,6 @@ class Graph:
         return True
 
     def printMatrix(self, ancho: int = 12) -> None:
-        # Obtener lugares que participan en conexiones.
         ciudades = []
 
         for v in self.vertexs:
@@ -48,7 +47,6 @@ class Graph:
         n = len(ciudades)
         matriz = [[0] * n for _ in range(n)]
 
-        # Llenar matriz con los pesos.
         for i in range(n):
             for vecino, peso in ciudades[i].neig:
                 for j in range(n):
@@ -81,74 +79,55 @@ class Graph:
             marca = "  [ZONA SEGURA]" if v.segura else ""
             print(f"{i:2}. {v.city}{marca}")
 
-    def dijkstra(self, origen: str, permitido=None):
-        """Distancia mínima desde 'origen' a todos los lugares.
-        'permitido(a, b)' (opcional) decide si se puede usar la arista a -> b."""
+    def explorar(self, actual: Vertex, meta, camino: list, distancia: float, evacuando: bool) -> None:
+        if self.mejor_distancia != -1 and distancia >= self.mejor_distancia:
+            return
+
+        llegamos = actual.segura if evacuando else actual is meta
+        if llegamos:
+            self.mejor_camino = camino.copy()
+            self.mejor_distancia = distancia
+            return
+
+        for vecino, peso in actual.neig:
+            if vecino in camino:
+                continue
+            if evacuando and not permitido_evacuar(actual, vecino):
+                continue
+            camino.append(vecino)
+            self.explorar(vecino, meta, camino, distancia + peso, evacuando)
+            camino.pop()
+
+    def buscarCamino(self, origen: str, destino: str, evacuando: bool) -> bool:
         inicio = self.buscar(origen)
-        if inicio is None:
-            return None, None
-
-        INF = float("inf")
-        dist = {v: INF for v in self.vertexs}
-        previo = {v: None for v in self.vertexs}
-        visitado = {v: False for v in self.vertexs}
-        dist[inicio] = 0
-
-        for _ in range(len(self.vertexs)):
-            actual = None
-            for v in self.vertexs:
-                if not visitado[v] and (actual is None or dist[v] < dist[actual]):
-                    actual = v
-            if actual is None or dist[actual] == INF:
-                break
-            visitado[actual] = True
-
-            for vecino, peso in actual.neig:
-                if permitido is not None and not permitido(actual, vecino):
-                    continue
-                if dist[actual] + peso < dist[vecino]:
-                    dist[vecino] = dist[actual] + peso
-                    previo[vecino] = actual
-
-        return dist, previo
-
-    def reconstruir(self, previo, destino: Vertex) -> list[str]:
-        camino = []
-        actual = destino
-        while actual is not None:
-            camino.insert(0, actual.city)
-            actual = previo[actual]
-        return camino
+        meta = self.buscar(destino) if not evacuando else None
+        if inicio is None or (not evacuando and meta is None):
+            print("  Lugar no encontrado.")
+            return False
+        self.mejor_camino = []
+        self.mejor_distancia = -1
+        self.explorar(inicio, meta, [inicio], 0, evacuando)
+        if self.mejor_distancia == -1:
+            print("  No hay ruta disponible.")
+            return False
+        return True
 
     def rutaMasCorta(self, origen: str, destino: str) -> None:
-        dist, previo = self.dijkstra(origen)
-        fin = self.buscar(destino)
-        if dist is None or fin is None:
-            print("  Lugar no encontrado.")
+        if not self.buscarCamino(origen, destino, False):
             return
-        if dist[fin] == float("inf"):
-            print("  No hay ruta disponible.")
-            return
-        camino = self.reconstruir(previo, fin)
-        print("  Ruta: " + " -> ".join(camino))
-        print(f"  Distancia total: {dist[fin]:g} m")
+        nombres = [v.city for v in self.mejor_camino]
+        print("  Ruta: " + " -> ".join(nombres))
+        print(f"  Distancia total: {self.mejor_distancia:g} m")
 
     def evacuar(self, origen: str) -> None:
-        dist, previo = self.dijkstra(origen, permitido_evacuar)
-        if dist is None:
-            print("  Lugar no encontrado.")
+        if not self.buscarCamino(origen, "", True):
             return
-        mejor = None
-        for v in self.vertexs:
-            if v.segura and (mejor is None or dist[v] < dist[mejor]):
-                mejor = v
-        if mejor is None or dist[mejor] == float("inf"):
-            print("  No hay zona segura alcanzable.")
-            return
-        camino = self.reconstruir(previo, mejor)
-        print(f"  ¡EVACUACIÓN! Zona segura más cercana: {mejor.city}")
-        print("  Ruta: " + " -> ".join(camino))
-        print(f"  Distancia: {dist[mejor]:g} m")
+        zona_segura = self.mejor_camino[-1]
+        nombres = [v.city for v in self.mejor_camino]
+        print(f"  ¡EVACUACIÓN! Zona segura más cercana: {zona_segura.city}")
+        print("  Ruta: " + " -> ".join(nombres))
+        print(f"  Distancia: {self.mejor_distancia:g} m")
+
 
 def zona(v: Vertex) -> str:
     nombre = v.city
@@ -160,19 +139,20 @@ def zona(v: Vertex) -> str:
 
 
 def permitido_evacuar(a: Vertex, b: Vertex) -> bool:
-    za, zb = zona(a), zona(b)
+    za = zona(a)
+    zb = zona(b)
     if za == "" and zb != "":
         return False
     if za != "" and zb != "" and za != zb:
         return False
     return True
 
+
 lugares = [
     "A - Entrada Este",
     "A - Pasillo Central",
     "A - Pasillo Norte",
     "A - Salida Norte",
-    "A - Extremo Oeste",
     "B - Extremo Este",
     "B - Pasillo Central",
     "B - Salida Norte",
@@ -238,60 +218,59 @@ zonas_seguras = [
     "Punto de Reunión Oeste",
 ]
 pasillos = [
-    ("A - Entrada Este", "A - Pasillo Central", 12),
+    ("A - Entrada Este", "A - Pasillo Central", 8),
     ("A - Pasillo Central", "A - Pasillo Norte", 9),
     ("A - Pasillo Norte", "A - Salida Norte", 8),
-    ("A - Pasillo Norte", "A - Extremo Oeste", 12),
-    ("A - Salida Norte", "Plaza Central Rubén Darío", 46),
-    ("A - Salida Norte", "Cafetería", 29),
-    ("A - Extremo Oeste", "B - Extremo Este", 6),
-    ("B - Extremo Este", "B - Pasillo Central", 29),
+    ("A - Pasillo Norte", "B - Extremo Este", 7),
+    ("A - Salida Norte", "Plaza Central Rubén Darío", 49),
+    ("A - Salida Norte", "Cafetería", 30),
+    ("B - Extremo Este", "B - Pasillo Central", 36),
     ("B - Extremo Este", "B1 - Escalera Este (inicio)", 7),
     ("B - Pasillo Central", "B - Salida Norte", 8),
-    ("B - Pasillo Central", "B - Extremo Oeste", 29),
+    ("B - Pasillo Central", "B - Extremo Oeste", 36),
     ("B - Pasillo Central", "Patio B-C", 10),
-    ("B - Pasillo Central", "B1 - Escalera Este (inicio)", 22),
-    ("B - Pasillo Central", "B1 - Escalera Oeste (inicio)", 22),
-    ("B - Salida Norte", "Plaza Central Rubén Darío", 36),
+    ("B - Pasillo Central", "B1 - Escalera Este (inicio)", 29),
+    ("B - Pasillo Central", "B1 - Escalera Oeste (inicio)", 29),
+    ("B - Salida Norte", "Plaza Central Rubén Darío", 34),
     ("B - Extremo Oeste", "B - Salida Oeste", 3),
     ("B - Extremo Oeste", "B1 - Escalera Oeste (inicio)", 7),
-    ("B - Salida Oeste", "Punto de Reunión Oeste", 32),
+    ("B - Salida Oeste", "Punto de Reunión Oeste", 34),
     ("B - Salida Oeste", "Sendero Oeste B-C", 10),
     ("Patio B-C", "C - Pasillo Central", 9),
-    ("Patio B-C", "Sendero Oeste B-C", 35),
+    ("Patio B-C", "Sendero Oeste B-C", 42),
     ("Patio B-C", "Puente B-C - Escalera (abajo)", 8),
-    ("C - Extremo Este", "C - Pasillo Central", 29),
+    ("C - Extremo Este", "C - Pasillo Central", 36),
     ("C - Extremo Este", "C1 - Escalera Este (inicio)", 7),
-    ("C - Pasillo Central", "C - Extremo Oeste", 29),
-    ("C - Pasillo Central", "C1 - Escalera Este (inicio)", 22),
-    ("C - Pasillo Central", "C1 - Escalera Oeste (inicio)", 22),
+    ("C - Pasillo Central", "C - Extremo Oeste", 36),
+    ("C - Pasillo Central", "C1 - Escalera Este (inicio)", 29),
+    ("C - Pasillo Central", "C1 - Escalera Oeste (inicio)", 29),
     ("C - Extremo Oeste", "C - Salida Oeste", 4),
     ("C - Extremo Oeste", "C1 - Escalera Oeste (inicio)", 7),
     ("C - Salida Oeste", "Sendero Oeste B-C", 9),
-    ("Sendero Oeste B-C", "Punto de Reunión Oeste", 37),
-    ("Sendero Oeste B-C", "Puente B-C - Escalera (abajo)", 28),
+    ("Sendero Oeste B-C", "Punto de Reunión Oeste", 38),
+    ("Sendero Oeste B-C", "Puente B-C - Escalera (abajo)", 34),
     ("Cafetería", "Plaza Central Rubén Darío", 25),
-    ("B2 - Extremo Este", "B2 - Pasillo Central", 21),
+    ("B2 - Extremo Este", "B2 - Pasillo Central", 28),
     ("B2 - Extremo Este", "B2 - Escalera Este (llegada)", 4),
     ("B2 - Extremo Este", "B2 - Escalera Este (inicio)", 2),
-    ("B2 - Pasillo Central", "B2 - Extremo Oeste", 21),
+    ("B2 - Pasillo Central", "B2 - Extremo Oeste", 28),
     ("B2 - Pasillo Central", "Puente B-C", 10),
     ("B2 - Extremo Oeste", "B2 - Escalera Oeste (llegada)", 4),
     ("B2 - Extremo Oeste", "B2 - Escalera Oeste (inicio)", 2),
-    ("B3 - Extremo Este", "B3 - Pasillo Central", 21),
+    ("B3 - Extremo Este", "B3 - Pasillo Central", 28),
     ("B3 - Extremo Este", "B3 - Escalera Este (llegada)", 4),
-    ("B3 - Pasillo Central", "B3 - Extremo Oeste", 21),
+    ("B3 - Pasillo Central", "B3 - Extremo Oeste", 28),
     ("B3 - Extremo Oeste", "B3 - Escalera Oeste (llegada)", 4),
-    ("C2 - Extremo Este", "C2 - Pasillo Central", 21),
+    ("C2 - Extremo Este", "C2 - Pasillo Central", 28),
     ("C2 - Extremo Este", "C2 - Escalera Este (llegada)", 4),
     ("C2 - Extremo Este", "C2 - Escalera Este (inicio)", 2),
-    ("C2 - Pasillo Central", "C2 - Extremo Oeste", 21),
+    ("C2 - Pasillo Central", "C2 - Extremo Oeste", 28),
     ("C2 - Pasillo Central", "Puente B-C", 9),
     ("C2 - Extremo Oeste", "C2 - Escalera Oeste (llegada)", 4),
     ("C2 - Extremo Oeste", "C2 - Escalera Oeste (inicio)", 2),
-    ("C3 - Extremo Este", "C3 - Pasillo Central", 21),
+    ("C3 - Extremo Este", "C3 - Pasillo Central", 28),
     ("C3 - Extremo Este", "C3 - Escalera Este (llegada)", 4),
-    ("C3 - Pasillo Central", "C3 - Extremo Oeste", 21),
+    ("C3 - Pasillo Central", "C3 - Extremo Oeste", 28),
     ("C3 - Extremo Oeste", "C3 - Escalera Oeste (llegada)", 4),
     ("Puente B-C", "Puente B-C - Escalera (arriba)", 2),
     ("Puente B-C - Escalera (arriba)", "Puente B-C - Escalera (abajo)", 10),

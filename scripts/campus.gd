@@ -1,8 +1,10 @@
 # ==========================================================
 #  Mapa del campus UAM - Edificios A, B y C
-#  Basado en el mapa oficial de Rutas de Evacuación.
-#  Coordenadas en METROS (aproximadas del mapa; medir en sitio
-#  y ajustar). x = horizontal del mapa, z = vertical del mapa,
+#  Basado en el mapa oficial de Rutas de Evacuación (el ESTE está
+#  arriba: x = sur, z = oeste; ver geo.gd) y en los contornos de
+#  OpenStreetMap: A es una franja de ~11 m de fondo y B y C miden
+#  ~73 m de largo; el bloque completo mide 88 x 30 m.
+#  Coordenadas en METROS (afinar midiendo en sitio).
 #  y = altura (cada planta de B y C mide ALTURA_PLANTA).
 # ==========================================================
 class_name Campus
@@ -14,10 +16,13 @@ const FACTOR_ESCALERA := 1.5   # bajar escaleras "cuesta" más que caminar plano
 # Edificios navegables: nombre, letra, color de la letra (como en el mapa),
 # x1, z1, x2, z2 (huella), altura de paredes, número de plantas
 const EDIFICIOS = [
-	["Edificio A", "A", Color("#E8743B"), 0.0, 0.0, 30.0, 26.0, 7.5, 2],
-	["Edificio B", "B", Color("#7B5CD6"), 0.0, 30.0, 12.0, 90.0, 10.8, 3],
-	["Edificio C", "C", Color("#4F6BD8"), 19.0, 30.0, 30.0, 90.0, 10.8, 3],
+	["Edificio A", "A", Color("#E8743B"), 0.0, 0.0, 30.0, 11.0, 7.5, 2],
+	["Edificio B", "B", Color("#7B5CD6"), 0.0, 15.0, 12.0, 88.0, 10.8, 3],
+	["Edificio C", "C", Color("#4F6BD8"), 19.0, 15.0, 30.0, 88.0, 10.8, 3],
 ]
+
+# Pasarela techada entre A y B (planta baja): x1, x2, z1, z2
+const PASARELA = [3.0, 9.0, 11.0, 15.0]
 
 # Edificios vecinos (contexto visual): letra, huella, altura, plantas, nombre
 const CONTEXTO = [
@@ -29,52 +34,51 @@ const CONTEXTO = [
 
 # Aulas (vista interior): x1, z1, x2, z2. Dejan libres los pasillos.
 const AULAS = [
-	# Edificio A
-	[0.0, 0.0, 6.6, 11.2], [6.6, 0.0, 13.2, 11.2],
-	[16.8, 0.0, 23.4, 14.8], [23.4, 0.0, 30.0, 14.8],
-	[0.0, 14.8, 4.2, 26.0],
-	[7.8, 14.8, 15.2, 26.0], [15.2, 14.8, 22.6, 26.0], [22.6, 14.8, 30.0, 26.0],
-	# Edificio B (los extremos z 30-38.6 y 81.4-90 son las escaleras)
-	[0.0, 39.6, 4.2, 47.0], [0.0, 47.0, 4.2, 58.2], [0.0, 61.8, 4.2, 70.0], [0.0, 70.0, 4.2, 80.4],
-	[7.8, 38.6, 12.0, 49.0], [7.8, 49.0, 12.0, 58.2], [7.8, 61.8, 12.0, 70.0], [7.8, 70.0, 12.0, 81.4],
+	# Edificio A: una fila de aulas al este (z 0-7.4) y el pasillo al oeste
+	# (z 7.4-11). El vestíbulo de la entrada este (x 13.2-16.8) queda libre.
+	[0.0, 0.0, 6.6, 7.4], [6.6, 0.0, 13.2, 7.4],
+	[16.8, 0.0, 23.4, 7.4], [23.4, 0.0, 30.0, 7.4],
+	# Edificio B (los extremos z 15-23.6 y 79.4-88 son las escaleras)
+	[0.0, 24.9, 4.2, 34.6], [0.0, 34.6, 4.2, 49.2], [0.0, 53.8, 4.2, 64.5], [0.0, 64.5, 4.2, 78.1],
+	[7.8, 23.6, 12.0, 37.2], [7.8, 37.2, 12.0, 49.2], [7.8, 53.8, 12.0, 64.5], [7.8, 64.5, 12.0, 79.4],
 	# Edificio C
-	[19.0, 39.6, 22.7, 47.0], [19.0, 47.0, 22.7, 58.2], [19.0, 61.8, 22.7, 70.0], [19.0, 70.0, 22.7, 80.4],
-	[26.3, 38.6, 30.0, 49.0], [26.3, 49.0, 30.0, 58.2], [26.3, 61.8, 30.0, 70.0], [26.3, 70.0, 30.0, 81.4],
+	[19.0, 24.9, 22.7, 34.6], [19.0, 34.6, 22.7, 49.2], [19.0, 53.8, 22.7, 64.5], [19.0, 64.5, 22.7, 78.1],
+	[26.3, 23.6, 30.0, 37.2], [26.3, 37.2, 30.0, 49.2], [26.3, 53.8, 30.0, 64.5], [26.3, 64.5, 30.0, 79.4],
 ]
 
 # Escaleras (cajas de escalera con descanso a media altura), pegadas al
 # lado norte para dejar libre el pasillo: letra, x del centro de la escalera,
 # z en el borde del piso, z del descanso, nombre
 const ESCALERAS = [
-	["B", 3.0, 38.0, 32.0, "Este"], ["B", 3.0, 82.0, 88.0, "Oeste"],
-	["C", 21.5, 38.0, 32.0, "Este"], ["C", 21.5, 82.0, 88.0, "Oeste"],
+	["B", 3.0, 23.0, 17.0, "Este"], ["B", 3.0, 80.0, 86.0, "Oeste"],
+	["C", 21.5, 23.0, 17.0, "Este"], ["C", 21.5, 80.0, 86.0, "Oeste"],
 ]
 const SEPARACION_TRAMOS := 1.25   # distancia del centro a cada tramo de la escalera
 
 # Puente entre B y C (planta 2) con escalera que baja al patio
 const PUENTE_Y := 3.6
-const PUENTE_Z := 60.0
+const PUENTE_Z := 51.5
 const PUENTE_X1 := 12.0
 const PUENTE_X2 := 19.0
-const PUENTE_ESCALERA = [Vector3(15.5, 3.6, 61.6), Vector3(15.5, 0.0, 67.5)]
+const PUENTE_ESCALERA = [Vector3(15.5, 3.6, 53.1), Vector3(15.5, 0.0, 59.0)]
 
 # Puertas: posición en la pared y hacia dónde mira
 const PUERTAS = [
 	[Vector3(15, 0, 0), Vector3(0, 0, -1)],
-	[Vector3(0, 0, 13), Vector3(-1, 0, 0)],
-	[Vector3(0, 0, 60), Vector3(-1, 0, 0)],
-	[Vector3(6, 0, 90), Vector3(0, 0, 1)],
-	[Vector3(12, 0, 60), Vector3(1, 0, 0)],
-	[Vector3(19, 0, 60), Vector3(-1, 0, 0)],
-	[Vector3(24.5, 0, 90), Vector3(0, 0, 1)],
-	[Vector3(12, 3.6, 60), Vector3(1, 0, 0)],
-	[Vector3(19, 3.6, 60), Vector3(-1, 0, 0)],
+	[Vector3(0, 0, 9.2), Vector3(-1, 0, 0)],
+	[Vector3(0, 0, 51.5), Vector3(-1, 0, 0)],
+	[Vector3(6, 0, 88), Vector3(0, 0, 1)],
+	[Vector3(12, 0, 51.5), Vector3(1, 0, 0)],
+	[Vector3(19, 0, 51.5), Vector3(-1, 0, 0)],
+	[Vector3(24.5, 0, 88), Vector3(0, 0, 1)],
+	[Vector3(12, 3.6, 51.5), Vector3(1, 0, 0)],
+	[Vector3(19, 3.6, 51.5), Vector3(-1, 0, 0)],
 ]
 
 # Aberturas en los muros (puertas + pasarela A-B): por aquí se puede cruzar la pared
 const ABERTURAS_EXTRA = [
-	[Vector3(6, 0, 26), Vector3(0, 0, 1)],
-	[Vector3(6, 0, 30), Vector3(0, 0, -1)],
+	[Vector3(6, 0, 11), Vector3(0, 0, 1)],
+	[Vector3(6, 0, 15), Vector3(0, 0, -1)],
 ]
 const ANCHO_PUERTA := 2.4
 const ALTO_PUERTA := 2.7
@@ -89,22 +93,21 @@ static func aberturas() -> Array:
 
 # Puntos de planta baja y exteriores: nombre, posición
 const PUNTOS = [
-	["A - Entrada Este",   Vector3(15, 0, 1)],
-	["A - Pasillo Central", Vector3(15, 0, 13)],
-	["A - Pasillo Norte",   Vector3(6, 0, 13)],
-	["A - Salida Norte",    Vector3(-2, 0, 13)],
-	["A - Extremo Oeste",     Vector3(6, 0, 25)],
-	["B - Extremo Este",   Vector3(6, 0, 31)],
-	["B - Pasillo Central", Vector3(6, 0, 60)],
-	["B - Salida Norte",    Vector3(-2, 0, 60)],
-	["B - Extremo Oeste",     Vector3(6, 0, 89)],
-	["B - Salida Oeste",      Vector3(6, 0, 91.5)],
-	["Patio B-C",           Vector3(15.5, 0, 60)],
-	["C - Extremo Este",   Vector3(24.5, 0, 31)],
-	["C - Pasillo Central", Vector3(24.5, 0, 60)],
-	["C - Extremo Oeste",     Vector3(24.5, 0, 89)],
-	["C - Salida Oeste",      Vector3(24.5, 0, 93)],
-	["Sendero Oeste B-C",     Vector3(15.5, 0, 95)],
+	["A - Entrada Este",    Vector3(15, 0, 1)],
+	["A - Pasillo Central", Vector3(15, 0, 9.2)],
+	["A - Pasillo Norte",   Vector3(6, 0, 9.2)],
+	["A - Salida Norte",    Vector3(-2, 0, 9.2)],
+	["B - Extremo Este",    Vector3(6, 0, 16)],
+	["B - Pasillo Central", Vector3(6, 0, 51.5)],
+	["B - Salida Norte",    Vector3(-2, 0, 51.5)],
+	["B - Extremo Oeste",   Vector3(6, 0, 87)],
+	["B - Salida Oeste",    Vector3(6, 0, 89.5)],
+	["Patio B-C",           Vector3(15.5, 0, 51.5)],
+	["C - Extremo Este",    Vector3(24.5, 0, 16)],
+	["C - Pasillo Central", Vector3(24.5, 0, 51.5)],
+	["C - Extremo Oeste",   Vector3(24.5, 0, 87)],
+	["C - Salida Oeste",    Vector3(24.5, 0, 91)],
+	["Sendero Oeste B-C",   Vector3(15.5, 0, 93)],
 	["Cafetería",           Vector3(-30, 0, 21)],
 ]
 
@@ -119,9 +122,8 @@ const PASILLOS = [
 	["A - Entrada Este",   "A - Pasillo Central"],
 	["A - Pasillo Central", "A - Pasillo Norte"],
 	["A - Pasillo Norte",   "A - Salida Norte"],
-	["A - Pasillo Norte",   "A - Extremo Oeste"],
 	["A - Salida Norte",    "Plaza Central Rubén Darío"],
-	["A - Extremo Oeste",     "B - Extremo Este"],
+	["A - Pasillo Norte",   "B - Extremo Este"],   # por la pasarela techada
 	["B - Extremo Este",   "B - Pasillo Central"],
 	["B - Pasillo Central", "B - Salida Norte"],
 	["B - Salida Norte",    "Plaza Central Rubén Darío"],
@@ -160,9 +162,9 @@ static func crear_campus() -> Graph:
 			var n := "%s%d - Extremo Este" % [letra, planta]
 			var c := "%s%d - Pasillo Central" % [letra, planta]
 			var s := "%s%d - Extremo Oeste" % [letra, planta]
-			mapa.insertVertex(n, false, Vector3(x, y, 38.6))
-			mapa.insertVertex(c, false, Vector3(x, y, 60))
-			mapa.insertVertex(s, false, Vector3(x, y, 81.4))
+			mapa.insertVertex(n, false, Vector3(x, y, 23.6))
+			mapa.insertVertex(c, false, Vector3(x, y, PUENTE_Z))
+			mapa.insertVertex(s, false, Vector3(x, y, 79.4))
 			_unir(mapa, n, c)
 			_unir(mapa, c, s)
 

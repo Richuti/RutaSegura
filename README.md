@@ -101,7 +101,7 @@ Las de capturas (`captura`, `primera`, `rapida`) funcionan sin argumentos; con u
 ninguna arista atraviesa paredes (solo por puertas), aulas ni edificios vecinos, evacuación completa desde
 cada punto, recálculo con pasillo bloqueado a mitad de camino, todas las rutas entre puntos y calidad de
 las indicaciones, que ninguna evacuación vuelva a entrar a un edificio ni cruce a otro, y que la ruta dibujada (con sus curvas) solo cruce muros por el hueco de una puerta.
-Resultado actual: **0 errores** (30 evacuaciones, 30 recálculos, 870 rutas, 0 curvas que crucen paredes).
+Resultado actual: **0 errores** (29 evacuaciones, 29 recálculos, 812 rutas, 0 curvas que crucen paredes).
 
 ## Voz (como Waze)
 
@@ -132,8 +132,8 @@ En Android, si no habla: Ajustes → Accesibilidad → Salida de texto a voz →
 
 ## Pendiente / siguiente fase
 
-- Medir en sitio las distancias y posiciones reales: están estimadas a partir del mapa
-  oficial y se cambian en `campus.gd`.
+- Medir en sitio las distancias reales: A (~11 m de fondo) y B y C (~73 m) salen de OpenStreetMap;
+  se ajustan en `campus.gd`.
 - Agregar los demás edificios (C, D, K, M…) y zonas seguras (Cancha de fútbol, Parqueo N).
 
 ## Ubicación por GPS
@@ -151,6 +151,10 @@ En Android, si no habla: Ajustes → Accesibilidad → Salida de texto a voz →
 
 ## Versión en Python
 `python/rutasseguras.py`: la misma estructura de clase (Vertex: city, neig; Graph: vertexs, insertVertex, link, printMatrix) con los mismos lugares y distancias que la app. Ejecutar: `python rutasseguras.py`.
+
+La ruta más corta se busca **probando caminos** (`explorar`): desde cada lugar se prueba ir a cada vecino sin repetir lugares; al llegar a la meta se guarda el camino si es el más corto hasta ahora, y un camino que ya es más largo que el mejor se deja de probar. En una evacuación la meta es cualquier zona segura y se respetan las reglas (no volver a entrar, no cruzar a otro edificio). Da las mismas distancias que la app.
+
+Si cambias `campus.gd`, regenera las listas con `godot --headless --path . -s res://tests/exportar_python.gd` (crea `tests/_datos_python.txt` para copiarlas).
 
 ## Requisitos
 Godot **4.7** (Compatibility). Pruebas: `tests/auditoria.tscn` (grafo y rutas), `tests/gps.tscn` (simula caminar con GPS).

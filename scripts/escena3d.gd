@@ -316,7 +316,8 @@ func _piso(p: Vector3) -> float:
 	for e in Campus.EDIFICIOS:
 		if Rect2(e[3], e[4], e[5] - e[3], e[6] - e[4]).has_point(Vector2(p.x, p.z)):
 			return 0.56
-	if Rect2(3.0, 26.0, 6.0, 4.0).has_point(Vector2(p.x, p.z)):
+	var pa: Array = Campus.PASARELA
+	if Rect2(pa[0], pa[2], pa[1] - pa[0], pa[3] - pa[2]).has_point(Vector2(p.x, p.z)):
 		return 0.56           # pasarela A-B
 	return 0.2
 
@@ -643,7 +644,7 @@ func _suelo() -> void:
 	add_child(_plano(Vector2(700, 700), Vector3(-10, 0, 55), SUELO))
 	# Áreas verdes
 	add_child(_plano(Vector2(40, 112), Vector3(-27, 0.01, 46), GRAMA))
-	add_child(_plano(Vector2(6.5, 60), Vector3(15.5, 0.01, 60), GRAMA))
+	add_child(_plano(Vector2(6.5, 73), Vector3(15.5, 0.01, 51.5), GRAMA))   # patio entre B y C
 	add_child(_plano(Vector2(60, 22), Vector3(-10, 0.01, 112), GRAMA))
 	# Plaza Central (piso de adoquín con anillo decorativo)
 	var plaza := Vector3(-35, 0, 45)
@@ -1029,10 +1030,14 @@ func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
 
 func _pasarela() -> void:
 	# Pasillo techado y hueco que une A con B (se puede caminar por dentro)
-	add_child(_caja(Vector3(5.4, 0.56, 4.2), Vector3(6, 0.28, 28), _mat(Color("#FBF8F2"))))
-	add_child(_caja(Vector3(6.4, 0.3, 4.6), Vector3(6, 3.6, 28), _mat(CORNISA)))
-	for xs in [3.15, 8.85]:
-		add_child(_caja(Vector3(0.3, 3.1, 4.0), Vector3(xs, 2.05, 28), _mat(PARED)))
+	var pa: Array = Campus.PASARELA
+	var cx: float = (pa[0] + pa[1]) / 2.0
+	var cz: float = (pa[2] + pa[3]) / 2.0
+	var largo: float = pa[3] - pa[2]
+	add_child(_caja(Vector3(pa[1] - pa[0] - 0.6, 0.56, largo + 0.2), Vector3(cx, 0.28, cz), _mat(Color("#FBF8F2"))))
+	add_child(_caja(Vector3(pa[1] - pa[0] + 0.4, 0.3, largo + 0.6), Vector3(cx, 3.6, cz), _mat(CORNISA)))
+	for xs in [pa[0] + 0.15, pa[1] - 0.15]:
+		add_child(_caja(Vector3(0.3, 3.1, largo), Vector3(xs, 2.05, cz), _mat(PARED)))
 
 
 func _puerta(pos: Vector3, normal: Vector3) -> void:
@@ -1102,7 +1107,7 @@ func _arboles() -> void:
 	for z in range(-6, 100, 7):
 		lugares.append(Vector3(-9, 0, z))
 		lugares.append(Vector3(-49, 0, z + 3))
-	for z in range(33, 90, 6):
+	for z in range(18, 88, 6):   # árboles del patio entre B y C
 		lugares.append(Vector3(15.5, 0, z))
 	for x in range(-48, 36, 7):
 		lugares.append(Vector3(x, 0, -9))

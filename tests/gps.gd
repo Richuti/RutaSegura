@@ -41,17 +41,17 @@ func _ready() -> void:
 	intro._omitir.pressed.emit()
 	_comprobar(main.bienvenida == null, "Se debe poder abrir el mapa sin otorgar el permiso")
 	# 1) Afuera, junto a la puerta norte del B
-	await _fix(-6, 60)
+	await _fix(-6, 51.5)
 	await get_tree().create_timer(1.0).timeout
 	print("CHIP afuera: ", main.chip_gps.text, " | origen: ", main.origen)
 	_comprobar(main._usar_gps() and main.op_origen.disabled, "El GPS debe fijar el origen sin selección manual")
 	var origen_gps: String = main.origen
 	main.seleccionar_origen("A - Entrada Este")
 	_comprobar(main.origen == origen_gps, "La selección manual no debe reemplazar el GPS")
-	var g := Geo.a_gps(-6, 60)
+	var g := Geo.a_gps(-6, 51.5)
 	main.gps.simular(g.x, g.y, 60.0)
 	_comprobar(not main._usar_gps() and main.origen == "", "Una lectura imprecisa debe invalidar el origen")
-	await _fix(-6, 60)
+	await _fix(-6, 51.5)
 	_foto("_1_afuera.png")
 	# 2) Entras al B: pregunta la planta
 	for k in 4:
@@ -106,9 +106,9 @@ func _ready() -> void:
 	_foto("_6_llegada.png")
 	# 5) Desvío: te sales de la ruta -> recalcula
 	main.terminar()
-	await _fix(15, 13)   # dentro de A
-	await _fix(15, 13)
-	await _fix(15, 13)
+	await _fix(15, 5)   # dentro de A
+	await _fix(15, 5)
+	await _fix(15, 5)
 	_comprobar(main.hoja_planta.visible, "El edificio A también debe solicitar el piso")
 	main._elegir_planta(2)
 	_comprobar(main._usar_gps() and main.bajar_desde == 2 and Campus.planta_de(main.ubic.a) == 1,
@@ -124,14 +124,14 @@ func _ready() -> void:
 	await get_tree().create_timer(0.5).timeout
 	print("RUTA CAFE: ", " -> ".join(main.nav.camino.map(func(v): return v.city)))
 	for k in 34:
-		await _fix(15, 13 - k * 1.5)   # sales por el este, lejos de la ruta
+		await _fix(15, 5 - k * 1.5)   # sales por el este, lejos de la ruta
 	await get_tree().create_timer(0.5).timeout
 	print("RECALCULADA: ", " -> ".join(main.nav.camino.map(func(v): return v.city)))
 
 	# 6) Plan B: GPS débil (±30 m). Fuera de emergencia no se usa la lectura,
 	#    pero se puede marcar la ubicación a mano y evacuar desde ahí.
 	main.terminar()
-	var g2 := Geo.a_gps(-6, 60)
+	var g2 := Geo.a_gps(-6, 51.5)
 	main.gps.simular(g2.x, g2.y, 30.0)
 	_comprobar(not main._usar_gps() and main._puede_marcar_a_mano() and not main.op_origen.disabled,
 		"Con GPS débil se debe poder marcar el origen a mano")
