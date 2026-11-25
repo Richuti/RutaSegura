@@ -1,0 +1,9 @@
+# Todos los archivos de texto se guardan con finales de línea LF (como Godot).
+* text=auto eol=lf
+
+# Binarios: nunca convertir
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.apk binary
+*.aab binary
