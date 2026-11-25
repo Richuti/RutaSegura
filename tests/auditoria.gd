@@ -82,7 +82,7 @@ func _ready() -> void:
 		for i in cam0.size() - 1:
 			if not Campus.permitido_evacuar(cam0[i], cam0[i + 1]):
 				_err("Evacuación desde %s vuelve a entrar o cruza de edificio: %s -> %s" % [o, cam0[i].city, cam0[i + 1].city])
-		var pasos: Array = main._pasos(main.nav.camino)
+		var pasos: Array = Indicaciones.pasos(main.nav.camino)
 		for p in pasos:
 			if p.titulo.contains("Escalera") or p.titulo.contains("nan") or p.titulo.contains("Tu ubicación"):
 				_err("Paso con texto raro desde %s: %s" % [o, p.titulo])
@@ -174,13 +174,13 @@ func _ready() -> void:
 			if o == d:
 				continue
 			var r := mapa.rutaMasCorta(o, d)
-			var tramos: Array = main._tramos(r.camino)
+			var tramos: Array = Indicaciones.tramos(r.camino)
 			for t in tramos.size():
 				if t > 0 and t < tramos.size() - 1 and tramos[t].largo < 3.0:
 					cortos += 1
 					if cortos <= 5:
 						avisos.append("Tramo muy corto (%.1f m) en %s -> %s" % [tramos[t].largo, o, d])
-			for p in main._pasos(r.camino):
+			for p in Indicaciones.pasos(r.camino):
 				if p.titulo.contains("vuelta"):
 					vueltas += 1
 					if vueltas <= 5:

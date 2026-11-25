@@ -534,136 +534,6 @@ func _crear_alerta_sismo() -> void:
 	v.add_child(fuente)
 
 
-# ==========================================================
-#  Indicaciones (salen del grafo)
-#  En cada vértice de la ruta se compara la arista que llega
-#  con la que sale: el ángulo y el lado dan la maniobra.
-# ==========================================================
-func _giro(a: Vector3, b: Vector3, c: Vector3) -> Dictionary:
-	# Arista inclinada = escaleras (cambia de planta)
-	if absf(c.y - b.y) > 0.5:
-		if absf(b.y - a.y) > 0.5:
-			return {"tipo": "escaleras", "texto": "Sigue " + ("bajando" if c.y < b.y else "subiendo") + " las escaleras", "continua": true}
-		return {"tipo": "escaleras", "texto": ("Baja" if c.y < b.y else "Sube") + " las escaleras"}
-	if absf(b.y - a.y) > 0.5:
-		# Saliendo de las escaleras: se calcula el giro con la dirección del último tramo
-		var g := _giro(Vector3(a.x, b.y, a.z), b, c)
-		if g.tipo == "recto":
-			return {"tipo": "recto", "texto": "Al bajar, sigue de frente"}
-		return {"tipo": g.tipo, "texto": "Al bajar, " + _min(g.texto)}
-	var d1 := Vector2(b.x - a.x, b.z - a.z).normalized()
-	var d2 := Vector2(c.x - b.x, c.z - b.z).normalized()
-	var ang := rad_to_deg(acos(clampf(d1.dot(d2), -1.0, 1.0)))
-	var cruz := d1.x * d2.y - d1.y * d2.x   # < 0 izquierda, > 0 derecha
-	if ang < 25:
-		return {"tipo": "recto", "texto": "Sigue recto"}
-	if ang > 150:
-		return {"tipo": "vuelta", "texto": "Da la vuelta"}
-	var lado := "izquierda" if cruz < 0 else "derecha"
-	if ang < 60:
-		return {"tipo": "leve_" + lado, "texto": "Gira levemente a la " + lado}
-	return {"tipo": lado, "texto": "Gira a la " + lado}
-
-
-# ---- Tramos: agrupan las aristas de la ruta en instrucciones ----
-# Las aristas de una escalera (tramos, descansos y la llegada a ella) se
-# juntan en UNA sola instrucción: "Baja las escaleras hasta la planta baja".
-func _tramos(camino: Array) -> Array:
-	var lista := []
-	for i in camino.size() - 1:
-		var esc: bool = Campus.es_escalera(camino[i]) or Campus.es_escalera(camino[i + 1])
-		var l: float = camino[i].pos.distance_to(camino[i + 1].pos)
-		if esc and not lista.is_empty() and lista[-1].escalera:
-			lista[-1].hasta = i
-			lista[-1].largo += l
-		elif not esc and not lista.is_empty() and not lista[-1].escalera \
-				and _giro(camino[i - 1].pos, camino[i].pos, camino[i + 1].pos).tipo == "recto":
-			# tramos rectos seguidos = una sola instrucción
-			lista[-1].hasta = i
-			lista[-1].largo += l
-		else:
-			lista.append({"desde": i, "hasta": i, "escalera": esc, "largo": l})
-	# Un tramo de menos de 3 m justo antes de una escalera se une a ella
-	# (evita "en 2 metros, gira…" al entrar por una puerta)
-	var t := lista.size() - 2
-	while t >= 0:
-		if not lista[t].escalera and lista[t].largo < 3.0 and lista[t + 1].escalera:
-			lista[t + 1].desde = lista[t].desde
-			lista[t + 1].largo += lista[t].largo
-			lista.remove_at(t)
-		t -= 1
-	# ...y uno de menos de 3 m justo después de la escalera también
-	t = 1
-	while t < lista.size() - 1:
-		if not lista[t].escalera and lista[t].largo < 3.0 and lista[t - 1].escalera:
-			lista[t - 1].hasta = lista[t].hasta
-			lista[t - 1].largo += lista[t].largo
-			lista.remove_at(t)
-		else:
-			t += 1
-	return lista
-
-
-# Maniobra al terminar el tramo t
-func _maniobra(camino: Array, tramos: Array, t: int) -> Dictionary:
-	if t >= tramos.size() - 1:
-		var fin: Vertex = camino[-1]
-		return {"tipo": "llegada", "texto": "Llegas a " + fin.city, "hacia": fin.city}
-	var sig: Dictionary = tramos[t + 1]
-	if sig.escalera:
-		var a: Vertex = camino[sig.desde]
-		var b: Vertex = camino[sig.hasta + 1]
-		var verbo := "Baja" if b.pos.y < a.pos.y else "Sube"
-		var destino := _nombre_planta(Campus.planta_de(b))
-		return {"tipo": "escaleras", "texto": verbo + " las escaleras", "hacia": "hasta " + destino}
-	var fin_t: int = tramos[t].hasta
-	var g := _giro(camino[fin_t].pos, camino[fin_t + 1].pos, camino[sig.desde + 1].pos)
-	if tramos[t].escalera:
-		var bajo: bool = camino[tramos[t].desde].pos.y > camino[fin_t + 1].pos.y
-		g.texto = ("Al bajar, " if bajo else "Al subir, ") + _min(g.texto)
-	g["hacia"] = "hacia " + camino[sig.hasta + 1].city
-	return g
-
-
-func _pasos(camino: Array) -> Array:
-	var tramos := _tramos(camino)
-	var lista := []
-	for t in tramos.size():
-		var tr: Dictionary = tramos[t]
-		var fin: Vertex = camino[tr.hasta + 1]
-		var titulo := ""
-		var tipo := "recto"
-		if tr.escalera:
-			var ini: Vertex = camino[tr.desde]
-			titulo = ("Baja" if fin.pos.y < ini.pos.y else "Sube") + " las escaleras hasta " + _nombre_planta(Campus.planta_de(fin))
-			tipo = "escaleras"
-		elif t == 0:
-			titulo = "Sal hacia " + fin.city
-		else:
-			var m := _maniobra(camino, tramos, t - 1)
-			titulo = m.texto + " hacia " + fin.city
-			tipo = m.tipo
-		lista.append({"tipo": tipo, "titulo": titulo, "metros": roundf(tr.largo)})
-	var ultimo: Vertex = camino[-1]
-	lista.append({"tipo": "llegada", "titulo": "Llegas a " + ultimo.city, "metros": -1.0})
-	return lista
-
-
-func _maniobras(camino: Array, color: Color) -> Array:
-	var tramos := _tramos(camino)
-	var total := 0.0
-	for tr in tramos:
-		total += tr.largo
-	var items := []
-	var acum := 0.0
-	for t in tramos.size() - 1:
-		acum += tramos[t].largo
-		var m := _maniobra(camino, tramos, t)
-		if m.tipo != "recto":
-			items.append([camino[tramos[t].hasta + 1].pos, m.tipo, color, acum / total])
-	return items
-
-
 func _zonas_cercanas() -> Array:
 	var r := mapa.dijkstra(origen, bloqueados, Campus.permitido_evacuar)
 	var lista := []
@@ -687,12 +557,12 @@ func _iniciar_navegacion(camino: Array, color: Color, es_emergencia: bool, anunc
 	for l in largos:
 		total += l
 	nav = {"camino": camino, "largos": largos, "total": total, "i": 0, "t": 0.0,
-		"color": color, "fin": false, "emergencia": es_emergencia, "tramos": _tramos(camino),
+		"color": color, "fin": false, "emergencia": es_emergencia, "tramos": Indicaciones.tramos(camino),
 		"gps": gps.es_automatico(), "fuera": -1.0, "esc_avisada": -1}
 	aviso_tramo = -1
 	aviso_ahora = -1
 	escena.mostrar_ruta(camino, color)
-	escena.marcar_maniobras(_maniobras(camino, color))
+	escena.marcar_maniobras(Indicaciones.maniobras(camino, color))
 	banner_tile.add_theme_stylebox_override("panel", Estilo.caja(color, 22, false))
 	nav_eta.add_theme_color_override("font_color", color.darkened(0.1))
 	_estilo_progreso(color)
@@ -702,9 +572,9 @@ func _iniciar_navegacion(camino: Array, color: Color, es_emergencia: bool, anunc
 	if not anunciar:
 		pass
 	elif es_emergencia:
-		_hablar("Emergencia. Te llevo a la zona segura más cercana: %s. Son %d metros." % [_para_voz(dest.city), roundi(total)], true)
+		_hablar("Emergencia. Te llevo a la zona segura más cercana: %s. Son %d metros." % [Indicaciones.para_voz(dest.city), roundi(total)], true)
 	else:
-		_hablar("Iniciando ruta hacia %s." % _para_voz(dest.city), true)
+		_hablar("Iniciando ruta hacia %s." % Indicaciones.para_voz(dest.city), true)
 	if anunciar and bajar_desde > 0:
 		_hablar("Primero baja por la escalera más cercana a la planta baja.")
 		mostrar_toast("Primero baja por la escalera más cercana a la planta baja")
@@ -793,7 +663,7 @@ func _actualizar_nav() -> void:
 	for k in range(nav.i + 1, tramos[t].hasta + 1):
 		falta += nav.largos[k]
 	var resta: float = nav.total - recorrido
-	var m := _maniobra(camino, tramos, t)
+	var m := Indicaciones.maniobra(camino, tramos, t)
 
 	var esperar_esc: bool = nav.gps and tramos[t].escalera
 	btn_escalera.visible = esperar_esc
@@ -802,7 +672,7 @@ func _actualizar_nav() -> void:
 		btn_escalera.text = "Ya estoy en " + ("planta baja" if p_fin == 1 else "planta %d" % p_fin)
 		if nav.esc_avisada != t:
 			nav.esc_avisada = t
-			_hablar.call_deferred("Cuando llegues a %s, toca el botón: ya estoy en %s." % [_nombre_planta(p_fin), "planta baja" if p_fin == 1 else "planta %d" % p_fin])
+			_hablar.call_deferred("Cuando llegues a %s, toca el botón: ya estoy en %s." % [Indicaciones.nombre_planta(p_fin), "planta baja" if p_fin == 1 else "planta %d" % p_fin])
 	if tramos[t].escalera:
 		var planta := roundi(pos.y / Campus.ALTURA_PLANTA) + 1
 		var fin: Vertex = camino[tramos[t].hasta + 1]
@@ -811,9 +681,9 @@ func _actualizar_nav() -> void:
 		banner_instr.text = ("Bajando" if fin.pos.y < pos.y - 0.2 else "Subiendo") + " las escaleras"
 		if absf(fin.pos.y - pos.y) < 0.2:
 			banner_instr.text = "Sal de las escaleras"
-		banner_hacia.text = "hasta " + _nombre_planta(Campus.planta_de(fin))
+		banner_hacia.text = "hasta " + Indicaciones.nombre_planta(Campus.planta_de(fin))
 		luego_icono.poner(m.tipo)
-		luego_txt.text = ("sigue " + m.hacia) if m.tipo == "recto" else _min(m.texto.replace("Al bajar, ", "").replace("Al subir, ", ""))
+		luego_txt.text = ("sigue " + m.hacia) if m.tipo == "recto" else Indicaciones.minuscula(m.texto.replace("Al bajar, ", "").replace("Al subir, ", ""))
 		chip_luego.visible = true
 	else:
 		banner_dist.text = "%d m" % ceili(falta)
@@ -821,9 +691,9 @@ func _actualizar_nav() -> void:
 		banner_instr.text = "Llegas a tu destino" if m.tipo == "llegada" else m.texto
 		banner_hacia.text = m.hacia
 		if t + 1 < tramos.size():
-			var m2 := _maniobra(camino, tramos, t + 1)
+			var m2 := Indicaciones.maniobra(camino, tramos, t + 1)
 			luego_icono.poner(m2.tipo)
-			luego_txt.text = _min(m2.texto) + ((" " + m2.hacia) if m2.tipo == "escaleras" else "")
+			luego_txt.text = Indicaciones.minuscula(m2.texto) + ((" " + m2.hacia) if m2.tipo == "escaleras" else "")
 			chip_luego.visible = true
 		else:
 			chip_luego.visible = false
@@ -837,7 +707,7 @@ func _actualizar_nav() -> void:
 	if plantas_ui.visible:
 		_marcar_planta(roundi(pos.y / Campus.ALTURA_PLANTA) + 1, nav.color)
 
-	nav_eta.text = _tiempo(resta / VELOCIDAD_CAMINAR)
+	nav_eta.text = Indicaciones.tiempo(resta / VELOCIDAD_CAMINAR)
 	nav_sub.text = "%d m  ·  %s" % [ceili(resta), ultimo.city]
 	nav_progreso.value = 100.0 * f
 	_avisos_de_voz(t, falta, m, camino, tramos)
@@ -852,17 +722,17 @@ func _avisos_de_voz(t: int, falta: float, m: Dictionary, camino: Array, tramos: 
 		if tr.escalera:
 			if t == 0:
 				var fin: Vertex = camino[tr.hasta + 1]
-				frase = "%s las escaleras hasta %s." % [("Baja" if fin.pos.y < camino[0].pos.y else "Sube"), _nombre_planta(Campus.planta_de(fin))]
+				frase = "%s las escaleras hasta %s." % [("Baja" if fin.pos.y < camino[0].pos.y else "Sube"), Indicaciones.nombre_planta(Campus.planta_de(fin))]
 		elif t == 0:
-			frase = "Camina %d metros hacia %s." % [roundi(falta), _para_voz(camino[tr.hasta + 1].city)]
+			frase = "Camina %d metros hacia %s." % [roundi(falta), Indicaciones.para_voz(camino[tr.hasta + 1].city)]
 			if m.tipo != "recto" and m.tipo != "llegada":
-				frase += " Luego, %s %s." % [_min(m.texto), _para_voz(m.hacia)]
+				frase += " Luego, %s %s." % [Indicaciones.minuscula(m.texto), Indicaciones.para_voz(m.hacia)]
 		elif m.tipo == "llegada":
-			frase = "En %d metros llegas a %s." % [roundi(falta), _para_voz(camino[-1].city)]
+			frase = "En %d metros llegas a %s." % [roundi(falta), Indicaciones.para_voz(camino[-1].city)]
 		elif m.tipo == "escaleras":
-			frase = "En %d metros, %s %s." % [roundi(falta), _min(m.texto), m.hacia]
+			frase = "En %d metros, %s %s." % [roundi(falta), Indicaciones.minuscula(m.texto), m.hacia]
 		elif m.tipo != "recto":
-			frase = "En %d metros, %s %s." % [roundi(falta), _min(m.texto), _para_voz(m.hacia)]
+			frase = "En %d metros, %s %s." % [roundi(falta), Indicaciones.minuscula(m.texto), Indicaciones.para_voz(m.hacia)]
 		if frase != "":
 			_hablar(frase)
 			_vibrar(60)
@@ -889,31 +759,9 @@ func _llegada(destino: Vertex) -> void:
 	_modo("llegada")
 	_vibrar(400)
 	if destino.segura:
-		_hablar("Llegaste a %s. Estás en una zona segura. Mantente aquí y sigue las indicaciones de los brigadistas." % _para_voz(destino.city), true)
+		_hablar("Llegaste a %s. Estás en una zona segura. Mantente aquí y sigue las indicaciones de los brigadistas." % Indicaciones.para_voz(destino.city), true)
 	else:
-		_hablar("Llegaste a %s." % _para_voz(destino.city), true)
-
-
-# Planta a la que llevan las escaleras que empiezan en el vértice i
-func _planta_destino(camino: Array, i: int) -> int:
-	var k := i
-	while k + 1 < camino.size() and absf(camino[k + 1].pos.y - camino[k].pos.y) > 0.5:
-		k += 1
-	return Campus.planta_de(camino[k])
-
-
-func _nombre_planta(p: int) -> String:
-	return "la planta baja" if p == 1 else "la planta %d" % p
-
-
-# Minúscula solo en la primera letra (para no estropear nombres propios)
-func _min(t: String) -> String:
-	return t.left(1).to_lower() + t.substr(1)
-
-
-func _tiempo(seg: float) -> String:
-	var s := ceili(seg)
-	return "%d s" % s if s < 60 else "%d min %02d s" % [s / 60, s % 60]
+		_hablar("Llegaste a %s." % Indicaciones.para_voz(destino.city), true)
 
 
 # ==========================================================
@@ -947,18 +795,6 @@ func _hablar(texto: String, interrumpir: bool = false) -> void:
 	DisplayServer.tts_speak(texto, voz, 100, 1.0, 1.05, 0, interrumpir)
 
 
-func _para_voz(nombre: String) -> String:
-	# "B - Pasillo Central" -> "Pasillo Central del edificio B"
-	if nombre.begins_with("hacia "):
-		return "hacia " + _para_voz(nombre.substr(6))
-	var partes := nombre.split(" - ")
-	if partes.size() == 2 and partes[0].length() == 1:
-		return "%s del edificio %s" % [partes[1], partes[0]]
-	if partes.size() == 2 and partes[0].length() == 2:
-		return "%s del edificio %s, planta %s" % [partes[1], partes[0][0], partes[0][1]]
-	return nombre.replace("B-C", "entre B y C")
-
-
 func alternar_vista() -> void:
 	_poner_vista(not escena.primera_persona)
 	mostrar_toast("Vista en primera persona" if escena.primera_persona else "Vista de mapa")
@@ -970,7 +806,7 @@ func _poner_vista(primera: bool) -> void:
 	if not nav.is_empty():
 		# Se redibuja la ruta con el ancho de la vista elegida
 		escena.mostrar_ruta(nav.camino, nav.color)
-		escena.marcar_maniobras(_maniobras(nav.camino, nav.color))
+		escena.marcar_maniobras(Indicaciones.maniobras(nav.camino, nav.color))
 		_actualizar_nav()
 
 
@@ -1470,7 +1306,7 @@ func _actualizar_cercanas() -> void:
 		var nombre := Estilo.texto(z.city, 20, Estilo.F_NEGRITA)
 		nombre.clip_text = true
 		v.add_child(nombre)
-		v.add_child(Estilo.texto("%s  ·  %s m" % [_tiempo(metros / VELOCIDAD_CAMINAR), Graph.fmt(metros)], 22, Estilo.F_EXTRA, Estilo.VERDE))
+		v.add_child(Estilo.texto("%s  ·  %s m" % [Indicaciones.tiempo(metros / VELOCIDAD_CAMINAR), Graph.fmt(metros)], 22, Estilo.F_EXTRA, Estilo.VERDE))
 		var zona_nombre := z.city
 		tarjeta_z.gui_input.connect(func(ev):
 			if ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and not ev.pressed:
@@ -1591,13 +1427,13 @@ func _crear_hoja_ruta() -> void:
 
 func _llenar_hoja_ruta(camino: Array, metros: float) -> void:
 	var fin: Vertex = camino[-1]
-	hr_eta.text = _tiempo(metros / VELOCIDAD_CAMINAR)
+	hr_eta.text = Indicaciones.tiempo(metros / VELOCIDAD_CAMINAR)
 	hr_sub.text = "%s m  ·  a pie" % Graph.fmt(metros)
 	hr_destino.text = "Hacia " + fin.city
 	hr_tag.visible = fin.segura
 	for c in hr_pasos.get_children():
 		c.queue_free()
-	for p in _pasos(camino):
+	for p in Indicaciones.pasos(camino):
 		var fila := HBoxContainer.new()
 		fila.add_theme_constant_override("separation", 16)
 		var fondo := PanelContainer.new()
@@ -1618,7 +1454,7 @@ func _llenar_hoja_ruta(camino: Array, metros: float) -> void:
 			fila.add_child(m)
 		hr_pasos.add_child(fila)
 	hr_grafo.text = "Dijkstra sobre el grafo  ·  %d vértices  ·  %d aristas" % [camino.size(), camino.size() - 1]
-	hr_n_pasos = _pasos(camino).size() - 1
+	hr_n_pasos = Indicaciones.pasos(camino).size() - 1
 	hr_detalle.visible = false
 	_texto_toggle()
 
@@ -2138,7 +1974,7 @@ func _detectar_fin_escalera(t: int, l: Vector2, prec: float) -> void:
 		var q := Geometry2D.get_closest_point_to_segment(l, pa, pb)
 		if q.distance_to(l) < 10.0 and recorrido + pa.distance_to(q) > 8.0 and l.distance_to(inicio) > 8.0:
 			_confirmar_escalera()
-			mostrar_toast("Llegaste a " + _nombre_planta(planta_actual))
+			mostrar_toast("Llegaste a " + Indicaciones.nombre_planta(planta_actual))
 			return
 		recorrido += pa.distance_to(pb)
 
