@@ -5,7 +5,7 @@
 # Si no pasas -Godot, usa la variable de entorno GODOT o "godot" del PATH.
 param(
     [string]$Godot = $(if ($env:GODOT) { $env:GODOT } else { "godot" }),
-    [int]$LimiteSeg = 180   # una prueba que tarde más se da por fallida (evita que se cuelgue)
+    [int]$LimiteSeg = 900   # una prueba que tarde más se da por fallida (la auditoría tarda unos 5 min)
 )
 
 $proyecto = Split-Path -Parent $PSScriptRoot

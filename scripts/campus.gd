@@ -24,12 +24,21 @@ const EDIFICIOS = [
 # Pasarela techada entre A y B (planta baja): x1, x2, z1, z2
 const PASARELA = [3.0, 9.0, 11.0, 15.0]
 
-# Edificios vecinos (contexto visual): letra, huella, altura, plantas, nombre
+# Edificios vecinos (contexto visual): letra, huella x1, z1, x2, z2, altura,
+# plantas, nombre. Huellas tomadas de OpenStreetMap y comparadas con el cartel
+# oficial. Ninguna ruta puede atravesarlos (lo revisa la auditoría).
+# N tiene forma de L: se arma con dos cajas (la segunda sin letra).
 const CONTEXTO = [
-	["K", -40.0, 5.0, -27.0, 19.0, 4.5, 1, "Cafetería"],
-	["M", 15.0, 100.0, 31.0, 116.0, 5.0, 1],
-	["F", -47.0, 98.0, -35.0, 110.0, 5.0, 1],
-	["G", -31.0, 98.0, -20.0, 110.0, 5.0, 1],
+	["K", -34.7, 9.8, -10.4, 30.3, 4.5, 1, "Cafetería"],
+	["E", -76.0, 72.2, -5.7, 83.8, 7.5, 2],
+	["F", -50.0, 92.4, -27.5, 108.9, 5.0, 1],
+	["G", -25.0, 91.4, -4.8, 108.5, 5.0, 1],
+	["M", 1.8, 96.9, 27.8, 115.7, 5.0, 1],
+	["H", 30.6, 97.0, 41.0, 130.7, 5.0, 1],
+	["J", 54.6, 13.0, 63.5, 29.0, 5.0, 1],
+	["D", 52.9, 30.8, 63.9, 43.5, 5.0, 1],
+	["N", 75.0, 17.5, 92.2, 82.4, 7.5, 2],
+	["", 51.0, 60.0, 75.0, 82.4, 7.5, 2],
 ]
 
 # Aulas (vista interior): x1, z1, x2, z2. Dejan libres los pasillos.
@@ -108,13 +117,24 @@ const PUNTOS = [
 	["C - Extremo Oeste",   Vector3(24.5, 0, 87)],
 	["C - Salida Oeste",    Vector3(24.5, 0, 91)],
 	["Sendero Oeste B-C",   Vector3(15.5, 0, 93)],
-	["Cafetería",           Vector3(-30, 0, 21)],
+	["Cafetería",           Vector3(-8, 0, 32)],     # esquina de K hacia A y la plaza
+	# Paso entre G y M hacia el punto de reunión y la cancha
+	["Paso G-M",            Vector3(-1.5, 0, 95)],
+	["Paso G-M Oeste",      Vector3(-1.5, 0, 112)],
+	# Calle frente a A y camino al parqueo de N
+	["Frente Edificio A",   Vector3(15, 0, -6)],
+	["Esquina Noreste de A", Vector3(-6, 0, -6)],   # rodea A por fuera hacia la plaza
+	["Esquina J",           Vector3(70, 0, -6)],
+	["Calle Este de N",     Vector3(70, 0, 15)],
+	["Entrada Parqueo N",   Vector3(100, 0, 15)],
 ]
 
 # Zonas de seguridad (círculo verde con check en el mapa oficial)
 const ZONAS_SEGURAS = [
-	["Plaza Central Rubén Darío", Vector3(-35, 0, 45)],
-	["Punto de Reunión Oeste",      Vector3(-15, 0, 116)],
+	["Plaza Central Rubén Darío", Vector3(-26, 0, 50)],
+	["Punto de Reunión Oeste",    Vector3(-16, 0, 118)],
+	["Cancha de Fútbol",          Vector3(15, 0, 198)],
+	["Zona Segura Parqueo N",     Vector3(108, 0, 50)],
 ]
 
 # Pasillos de planta baja y exteriores (se caminan en ambos sentidos)
@@ -122,14 +142,13 @@ const PASILLOS = [
 	["A - Entrada Este",   "A - Pasillo Central"],
 	["A - Pasillo Central", "A - Pasillo Norte"],
 	["A - Pasillo Norte",   "A - Salida Norte"],
-	["A - Salida Norte",    "Plaza Central Rubén Darío"],
 	["A - Pasillo Norte",   "B - Extremo Este"],   # por la pasarela techada
 	["B - Extremo Este",   "B - Pasillo Central"],
 	["B - Pasillo Central", "B - Salida Norte"],
 	["B - Salida Norte",    "Plaza Central Rubén Darío"],
 	["B - Pasillo Central", "B - Extremo Oeste"],
 	["B - Extremo Oeste",     "B - Salida Oeste"],
-	["B - Salida Oeste",      "Punto de Reunión Oeste"],
+	["B - Salida Oeste",      "Paso G-M"],
 	["B - Pasillo Central", "Patio B-C"],
 	["Patio B-C",           "C - Pasillo Central"],
 	["C - Extremo Este",   "C - Pasillo Central"],
@@ -137,7 +156,17 @@ const PASILLOS = [
 	["C - Extremo Oeste",     "C - Salida Oeste"],
 	["C - Salida Oeste",      "Sendero Oeste B-C"],
 	["B - Salida Oeste",      "Sendero Oeste B-C"],
-	["Sendero Oeste B-C",     "Punto de Reunión Oeste"],
+	["Sendero Oeste B-C",     "Paso G-M"],
+	["Paso G-M",              "Paso G-M Oeste"],
+	["Paso G-M Oeste",        "Punto de Reunión Oeste"],
+	["Paso G-M Oeste",        "Cancha de Fútbol"],
+	["A - Entrada Este",      "Frente Edificio A"],
+	["Frente Edificio A",     "Esquina Noreste de A"],
+	["Esquina Noreste de A",  "A - Salida Norte"],
+	["Frente Edificio A",     "Esquina J"],
+	["Esquina J",             "Calle Este de N"],
+	["Calle Este de N",       "Entrada Parqueo N"],
+	["Entrada Parqueo N",     "Zona Segura Parqueo N"],
 	["Patio B-C",           "Sendero Oeste B-C"],
 	["A - Salida Norte",    "Cafetería"],
 	["Cafetería",           "Plaza Central Rubén Darío"],

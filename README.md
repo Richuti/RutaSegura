@@ -13,7 +13,7 @@ scripts/
   vertex.gd          class Vertex  (city, segura, pos, neig)          <- igual que en clase
   graph.gd           class Graph   (insertVertex, link, printMatrix)   <- igual que en clase
                      + linkDoble, dijkstra, rutaMasCorta, evacuar
-  campus.gd          Datos: edificios A, B, C (y vecinos K, M, F, G), aulas, puntos por planta,
+  campus.gd          Datos: edificios A, B, C (y vecinos K, E, F, G, M, H, J, D, N), aulas, puntos por planta,
                      escaleras, zonas seguras y pasillos
   escena3d.gd        Mundo 3D: edificios, árboles, parqueo, zonas seguras, ruta animada, cámara
   main.gd            Interfaz y navegación tipo Waze (indicaciones generadas desde el grafo)
@@ -44,6 +44,17 @@ tests/rutas.*        Lista la ruta de evacuación desde cada punto (para revisar
 | Indicaciones Waze | En cada vértice de la ruta se compara la arista que llega con la que sale (ángulo y lado) para decir "gira a la izquierda/derecha" o "sigue recto" |
 
 `printMatrix()` imprime la matriz de adyacencia en la consola de Godot al abrir la app.
+
+## Zonas seguras (del cartel oficial)
+
+| Zona | Dónde | Camino |
+|---|---|---|
+| Plaza Central Rubén Darío | Entre K, B y E | Salidas norte de A y B, y la cafetería |
+| Punto de Reunión Oeste | Entre F, G y M | Paso entre G y M, desde la salida oeste de B y el sendero B-C |
+| Cancha de Fútbol | Al oeste del campus | Sigue desde el paso G-M |
+| Zona Segura Parqueo N | Entre N y el edificio Copérnico | Calle frente a A, esquina de J y calle este de N |
+
+Los edificios vecinos (K, E, F, G, M, H, J, D y N) salen de OpenStreetMap y del cartel; ninguna ruta los atraviesa.
 
 ## Pantallas
 
@@ -101,7 +112,8 @@ Las de capturas (`captura`, `primera`, `rapida`) funcionan sin argumentos; con u
 ninguna arista atraviesa paredes (solo por puertas), aulas ni edificios vecinos, evacuación completa desde
 cada punto, recálculo con pasillo bloqueado a mitad de camino, todas las rutas entre puntos y calidad de
 las indicaciones, que ninguna evacuación vuelva a entrar a un edificio ni cruce a otro, y que la ruta dibujada (con sus curvas) solo cruce muros por el hueco de una puerta.
-Resultado actual: **0 errores** (29 evacuaciones, 29 recálculos, 812 rutas, 0 curvas que crucen paredes).
+Resultado actual: **0 errores** (36 evacuaciones, 36 recálculos, 1260 rutas, 0 curvas que crucen paredes).
+Tarda unos 5 minutos.
 
 ## Voz (como Waze)
 
@@ -134,7 +146,8 @@ En Android, si no habla: Ajustes → Accesibilidad → Salida de texto a voz →
 
 - Medir en sitio las distancias reales: A (~11 m de fondo) y B y C (~73 m) salen de OpenStreetMap;
   se ajustan en `campus.gd`.
-- Agregar los demás edificios (C, D, K, M…) y zonas seguras (Cancha de fútbol, Parqueo N).
+- Mapear por dentro los edificios vecinos (hoy son solo contexto visual) y confirmar en sitio los caminos
+  exteriores nuevos: el paso entre G y M y la calle frente a A hacia el parqueo de N.
 
 ## Ubicación por GPS
 - En Android, concede **ubicación precisa** mientras usas la app. La app lee las coordenadas del teléfono con `LocationManager` desde GDScript, mediante `JavaClassWrapper` y `AndroidRuntime`.

@@ -80,6 +80,8 @@ func construir(_mapa: Graph) -> void:
 	for c in Campus.CONTEXTO:
 		_edificio(c[1], c[2], c[3], c[4], c[5], c[6], CTX_PARED, CTX_TECHO, Color("#9AABB5"), false)
 		var nombre_c: String = c[7] if c.size() > 7 else ""
+		if c[0] == "":
+			continue   # segunda caja de un edificio en L: la letra ya está en la primera
 		_insignia(c[0], Color("#C9822B") if nombre_c != "" else Color("#9AA7AD"), nombre_c, Vector3((c[1] + c[3]) / 2.0, c[5] + 8.0, (c[2] + c[4]) / 2.0), false)
 	for p in Campus.PUERTAS:
 		_puerta(p[0], p[1])
@@ -647,7 +649,7 @@ func _suelo() -> void:
 	add_child(_plano(Vector2(6.5, 73), Vector3(15.5, 0.01, 51.5), GRAMA))   # patio entre B y C
 	add_child(_plano(Vector2(60, 22), Vector3(-10, 0.01, 112), GRAMA))
 	# Plaza Central (piso de adoquín con anillo decorativo)
-	var plaza := Vector3(-35, 0, 45)
+	var plaza: Vector3 = Campus.ZONAS_SEGURAS[0][1]
 	add_child(_disco(plaza + Vector3(0, 0.02, 0), 17.0, 0.04, _mat(Color("#F3EFE6"))))
 	add_child(_disco(plaza + Vector3(0, 0.03, 0), 13.5, 0.04, _mat(Color("#E4DCCB"))))
 	add_child(_disco(plaza + Vector3(0, 0.04, 0), 12.8, 0.04, _mat(Color("#F3EFE6"))))
@@ -663,14 +665,14 @@ func _vias_y_parqueos() -> void:
 		add_child(_caja(Vector3(3.5, 0.07, 0.25), Vector3(x, 0.04, -16), linea))
 		add_child(_caja(Vector3(3.5, 0.07, 0.25), Vector3(x, 0.04, 131), linea))
 	# Parqueo norte con líneas y carros
-	add_child(_caja(Vector3(26, 0.06, 126), Vector3(-66, 0.03, 57), asfalto))
+	add_child(_caja(Vector3(26, 0.06, 74), Vector3(-66, 0.03, 31), asfalto))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
 	var colores := [Color("#E9ECEE"), Color("#3C4A57"), Color("#C2423A"), Color("#2D6CB5"), Color("#F5F5F2"), Color("#8E989E"), Color("#1F2A33")]
 	for fila in [-73.0, -59.0]:
-		for z in range(0, 116, 3):
+		for z in range(-4, 68, 3):
 			add_child(_caja(Vector3(5.2, 0.07, 0.14), Vector3(fila, 0.04, z), linea))
-			if rng.randf() < 0.42 and z < 113:
+			if rng.randf() < 0.42 and z < 65:
 				_carro(Vector3(fila, 0, z + 1.5), colores[rng.randi() % colores.size()], rng)
 
 
@@ -1114,10 +1116,10 @@ func _arboles() -> void:
 		lugares.append(Vector3(x + 3, 0, 124))
 	for i in 12:
 		var a := TAU * i / 12.0
-		lugares.append(Vector3(-35, 0, 45) + Vector3(cos(a), 0, sin(a)) * 20.0)
+		lugares.append(Campus.ZONAS_SEGURAS[0][1] + Vector3(cos(a), 0, sin(a)) * 20.0)
 	for i in 9:
 		var a := TAU * i / 9.0 + 0.3
-		lugares.append(Vector3(-15, 0, 116) + Vector3(cos(a), 0, sin(a)) * 14.0)
+		lugares.append(Campus.ZONAS_SEGURAS[1][1] + Vector3(cos(a), 0, sin(a)) * 14.0)
 
 	var troncos: Array[Transform3D] = []
 	var copas: Array[Transform3D] = []
