@@ -200,7 +200,7 @@ func _ready() -> void:
 	print("Errores: %d" % errores.size())
 	for e in errores:
 		print("  ✗ ", e)
-	get_tree().quit()
+	get_tree().quit(1 if not errores.is_empty() else 0)
 
 
 # Puntos donde el segmento cruza el borde del rectángulo

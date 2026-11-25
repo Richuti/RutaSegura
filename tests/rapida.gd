@@ -6,5 +6,6 @@ func _ready() -> void:
 	if a.size() > 1:
 		main.seleccionar_origen(a[1])
 	await get_tree().create_timer(1.2).timeout
-	get_viewport().get_texture().get_image().save_png(a[0])
+	if not a.is_empty() and DisplayServer.get_name() != "headless":
+		get_viewport().get_texture().get_image().save_png(a[0])
 	get_tree().quit()
